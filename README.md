@@ -11,6 +11,20 @@
 
 構成（処理の流れ）は次のとおりです。
 
+## アーキテクチャ図（概要）
+
+```plantuml
+@startuml
+package "Patient Namespace (/patient_x)" {
+  [vital_sensor]
+}
+
+[icu_monitor]
+
+vital_sensor --> icu_monitor : VitalSigns.msg
+@enduml
+```
+
 - `vital_sensor` が相対トピック `patient_vitals` に publish（例: `/patient_01/patient_vitals`）
 - `icu_monitor` が `patients` 引数から購読先 `/{pid}/patient_vitals` を決定
 
