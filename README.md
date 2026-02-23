@@ -2,6 +2,15 @@
 
 複数患者（例: `patient_01`, `patient_02`）のバイタルを **namespace で分離**して publish し、集約ノードが患者ごとのトピックを subscribe して一覧表示します。
 
+## 目的と設計思想
+このリポジトリは、ROS 2 Humble 上で「複数患者のバイタル監視」を題材に、**再現可能な colcon workspace** としての構成・運用（起動/停止/確認）をまとめた学習用サンプルです。
+
+- **型安全メッセージ**: 独自 msg（`medical_interfaces/VitalSigns.msg`）でバイタルデータを型として定義し、ノード間通信を明確化します。
+- **namespace 分離**: 患者ごとに namespace を切って同一ノードを複数起動し、トピック衝突を避けながらスケールさせます。
+- **clean shutdown 設計**: `Ctrl+C` で確実に落ちることを前提に、launch 側の猶予設定と node 側の終了処理を整えています。
+
+構成（処理の流れ）は次のとおりです。
+
 - `vital_sensor` が相対トピック `patient_vitals` に publish（例: `/patient_01/patient_vitals`）
 - `icu_monitor` が `patients` 引数から購読先 `/{pid}/patient_vitals` を決定
 

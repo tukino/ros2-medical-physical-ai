@@ -40,6 +40,9 @@ def _launch_setup(context, *args, **kwargs):
     patients_csv = LaunchConfiguration('patients').perform(context)
     patient_ids = _parse_patients_csv(patients_csv)
 
+    sigterm_timeout = LaunchConfiguration('sigterm_timeout')
+    sigkill_timeout = LaunchConfiguration('sigkill_timeout')
+
     if not patient_ids:
         raise RuntimeError("Launch argument 'patients' resulted in empty patient list")
 
@@ -55,6 +58,8 @@ def _launch_setup(context, *args, **kwargs):
                 namespace=pid,
                 output='screen',
                 parameters=[{'patient_id': pid}],
+                sigterm_timeout=sigterm_timeout,
+                sigkill_timeout=sigkill_timeout,
             )
         )
 
@@ -66,6 +71,8 @@ def _launch_setup(context, *args, **kwargs):
             name='icu_monitor',
             output='screen',
             parameters=[{'patients': patient_ids}, {'vitals_topic': 'patient_vitals'}],
+            sigterm_timeout=sigterm_timeout,
+            sigkill_timeout=sigkill_timeout,
         )
     )
 
@@ -79,6 +86,22 @@ def generate_launch_description() -> LaunchDescription:
                 'patients',
                 default_value='patient_01,patient_02,patient_03,patient_04,patient_05',
                 description='Comma-separated patient namespaces (e.g. patient_01,patient_02)',
+            ),
+            DeclareLaunchArgument(
+                'sigterm_timeout',
+                default_value='5',
+                description=(
+                    'Seconds to wait after SIGINT before escalating to SIGTERM '
+                    '(launch.actions.ExecuteLocal/ExecuteProcess)'
+                ),
+            ),
+            DeclareLaunchArgument(
+                'sigkill_timeout',
+                default_value='5',
+                description=(
+                    'Additional seconds to wait after SIGTERM before escalating to SIGKILL '
+                    '(launch.actions.ExecuteLocal/ExecuteProcess)'
+                ),
             ),
             OpaqueFunction(function=_launch_setup),
         ]

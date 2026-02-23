@@ -17,8 +17,10 @@ ICU monitor node.
 from __future__ import annotations
 
 import os
+import signal
 import sys
 import shutil
+import threading
 from typing import Dict
 from typing import List
 from typing import Optional
@@ -205,29 +207,110 @@ class IcuMonitorNode(Node):
 
 
 def main(args=None):
+    shutdown_requested = threading.Event()
+
+    def _request_shutdown(_signum=None, _frame=None):
+        shutdown_requested.set()
+
+    original_sigint_handler = signal.getsignal(signal.SIGINT)
+    original_sigterm_handler = signal.getsignal(signal.SIGTERM)
+
     rclpy.init(args=args)
 
-    node = IcuMonitorNode()
-    destroyed = False
+    # NOTE: signal handler では destroy_node() / rclpy.shutdown() を呼ばない
+    signal.signal(signal.SIGINT, _request_shutdown)
+    signal.signal(signal.SIGTERM, _request_shutdown)
+
+    node: Optional[IcuMonitorNode] = None
+    executor = None
 
     try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        if not destroyed:
+        node = IcuMonitorNode()
+
+        from rclpy.executors import ExternalShutdownException
+        from rclpy.executors import SingleThreadedExecutor
+
+        executor = SingleThreadedExecutor()
+        executor.add_node(node)
+
+        try:
+            while rclpy.ok() and not shutdown_requested.is_set():
+                executor.spin_once(timeout_sec=0.1)
+            return 0
+        except (KeyboardInterrupt, ExternalShutdownException):
+            shutdown_requested.set()
+            return 0
+        except Exception as exc:
             try:
-                node.destroy_node()
-                destroyed = True
-            except (ValueError, RCLError) as exc:
+                node.get_logger().error(f'Unhandled exception: {exc!r}')
+            except Exception:
+                pass
+            return 0
+        finally:
+            try:
+                if executor is not None and node is not None:
+                    executor.remove_node(node)
+            except Exception:
+                pass
+
+            try:
+                if executor is not None:
+                    executor.shutdown()
+            except Exception:
+                pass
+
+            if node is not None:
                 try:
-                    node.get_logger().warn(f'destroy_node() failed during shutdown: {exc!r}')
+                    if getattr(node, '_summary_timer', None) is not None:
+                        try:
+                            node._summary_timer.cancel()
+                        except Exception:
+                            pass
+                        try:
+                            node.destroy_timer(node._summary_timer)
+                        except (ValueError, RCLError):
+                            pass
                 except Exception:
                     pass
 
-        if rclpy.ok():
-            rclpy.shutdown()
+                try:
+                    for sub in list(getattr(node, '_subscriptions', [])):
+                        try:
+                            node.destroy_subscription(sub)
+                        except (ValueError, RCLError):
+                            pass
+                except Exception:
+                    pass
+
+                try:
+                    node.destroy_node()
+                except (ValueError, RCLError) as exc:
+                    try:
+                        node.get_logger().warn(
+                            f'destroy_node() failed during shutdown: {exc!r}'
+                        )
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+    except Exception:
+        # 起動/終了時の例外は exit code 0 で握りつぶす
+        return 0
+    finally:
+        try:
+            signal.signal(signal.SIGINT, original_sigint_handler)
+            signal.signal(signal.SIGTERM, original_sigterm_handler)
+        except Exception:
+            pass
+
+        try:
+            if rclpy.ok():
+                rclpy.shutdown()
+        except Exception:
+            pass
+
+    return 0
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())

@@ -5,12 +5,16 @@
 型安全な医療データ通信を実現する.
 """
 
+from __future__ import annotations
+
 import math
 import random
+import sys
 
 import rclpy
 from medical_interfaces.msg import VitalSigns
 from rclpy.executors import ExternalShutdownException
+from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 
 
@@ -102,25 +106,63 @@ class VitalSensorNode(Node):
 def main(args=None):
     rclpy.init(args=args)
 
-    node = VitalSensorNode()
+    node = None
+    executor = None
 
     try:
-        rclpy.spin(node)
-        return 0
-    except (KeyboardInterrupt, ExternalShutdownException):
-        return 0
-    finally:
-        try:
-            node.destroy_node()
-        except Exception:
-            pass
+        node = VitalSensorNode()
 
+        executor = SingleThreadedExecutor()
+        executor.add_node(node)
+
+        try:
+            while rclpy.ok():
+                executor.spin_once(timeout_sec=0.1)
+            return 0
+        except (KeyboardInterrupt, ExternalShutdownException):
+            return 0
+        except Exception:
+            return 0
+        finally:
+            try:
+                if executor is not None and node is not None:
+                    executor.remove_node(node)
+            except Exception:
+                pass
+
+            try:
+                if executor is not None:
+                    executor.shutdown()
+            except Exception:
+                pass
+
+            if node is not None:
+                try:
+                    if getattr(node, 'timer', None) is not None:
+                        try:
+                            node.timer.cancel()
+                        except Exception:
+                            pass
+                        try:
+                            node.destroy_timer(node.timer)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+                try:
+                    node.destroy_node()
+                except Exception:
+                    pass
+    finally:
         try:
             if rclpy.ok():
                 rclpy.shutdown()
         except Exception:
             pass
 
+    return 0
+
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())
