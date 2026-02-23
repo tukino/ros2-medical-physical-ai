@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>medical_robot_sim</name>
+  <version>0.0.0</version>
+  <description>医療ロボットシミュレーションパッケージ</description>
+  <maintainer email="yohei@todo.todo">yohei</maintainer>
+  <license>Apache-2.0</license>
+
+  <!-- ビルド時依存関係 -->
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <!-- 実行時依存関係 -->
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>medical_interfaces</exec_depend>
+
+  <!-- テスト依存関係 -->
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
