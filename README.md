@@ -131,6 +131,74 @@ ros2 topic echo /patient_01/patient_vitals --once
 ros2 topic hz /patient_01/patient_vitals
 ```
 
+## 再現の合格条件
+このリポジトリの「再現できた」と判断する最小条件は次のとおりです。
+
+- `ros2 launch medical_robot_sim icu_multi_patient.launch.py` が起動し、`icu_monitor` が患者一覧を 1 秒ごとに更新表示する
+- `ros2 topic echo /patient_01/patient_vitals --once` が 1 件出力する（型が `medical_interfaces/msg/VitalSigns`）
+- `ros2 topic hz /patient_01/patient_vitals` が 0Hz ではなく、おおむね 1Hz 前後のレートを示す
+- rosbag 記録後に `ros2 bag info <bag_dir>` で、対象トピックが表示される
+
+### `ros2 topic echo` 期待出力例（最小）
+```text
+patient_id: patient_01
+measurement_id: 0
+heart_rate: 72
+blood_pressure_systolic: 120
+blood_pressure_diastolic: 80
+body_temperature: 36.5
+oxygen_saturation: 98
+status: monitoring
+```
+
+### `ros2 topic hz` 期待出力例（最小）
+```text
+average rate: 1.0
+```
+
+### `ros2 bag info` 期待出力例（最小）
+```text
+Storage id: sqlite3
+Duration: 5.0s
+Messages:
+  Topic: /patient_01/patient_vitals | Type: medical_interfaces/msg/VitalSigns | Count: 5
+  Topic: /patient_02/patient_vitals | Type: medical_interfaces/msg/VitalSigns | Count: 5
+```
+
+## rosbag 記録/再生
+ICU の検証用に、患者ごとの `VitalSigns` を rosbag に記録・再生できます。
+
+（別ターミナルの場合は、先に環境を読み込みます）
+```bash
+source /opt/ros/humble/setup.bash
+source ~/ros2_ws/install/setup.bash
+```
+
+### 記録（デフォルト: patient_01〜patient_05）
+```bash
+cd ~/ros2_ws
+./src/medical_robot_sim/scripts/rosbag_record_vitals.sh
+```
+
+患者を 2 人に絞る例（CSV）:
+```bash
+cd ~/ros2_ws
+./src/medical_robot_sim/scripts/rosbag_record_vitals.sh patient_01,patient_02
+```
+
+### 再生
+直近の `bags/*` を自動選択して再生:
+```bash
+cd ~/ros2_ws
+./src/medical_robot_sim/scripts/rosbag_play_vitals.sh
+```
+
+bag を明示する例:
+```bash
+cd ~/ros2_ws
+./src/medical_robot_sim/scripts/rosbag_play_vitals.sh bags/vitals_YYYYmmdd_HHMMSS
+```
+
 （任意）接続関係確認:
 ```bash
 sudo apt update
@@ -144,9 +212,9 @@ rqt_graph
 ```text
 ICU DASHBOARD  (patients=2)
 ----------------------------------------------------------------------------------------------------
-pid        | alert   |  HR | SpO2 | BP      | Temp | age
+pid        | alert   |  HR | SpO2 | BP      | Temp | note               | age
 ----------------------------------------------------------------------------------------------------
-patient_01 | OK      |  72 |   96 | 129/83  | 37.0 |  0s
-patient_02 | OK      |  73 |   96 | 118/74  | 37.3 |  0s
+patient_01 | OK      |  72 |   96 | 129/83  | 37.0 | -                  |  0s
+patient_02 | OK      |  73 |   96 | 118/74  | 37.3 | -                  |  0s
 ----------------------------------------------------------------------------------------------------
 ```

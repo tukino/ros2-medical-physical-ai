@@ -15,3 +15,8 @@
 .idea/
 *.swp
 *.tmp
+
+# local artifacts
+/bags/
+.ros/
+*.db3

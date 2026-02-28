@@ -41,6 +41,21 @@ class VitalSensorNode(Node):
         if publish_rate_hz <= 0.0:
             raise ValueError("Parameter 'publish_rate_hz' must be > 0")
 
+        # シナリオ（デモ/再現性向け）
+        # - '' / 'normal': 通常のランダム変動
+        # - 'spo2_drop': 開始数秒後からSpO2を段階的に下げ、roc.spo2_drop を確実に誘発
+        self.declare_parameter('scenario', '')
+        self.scenario = str(self.get_parameter('scenario').value)
+
+        # spo2_drop 用の開始遅延（秒）
+        self._spo2_drop_delay_sec = 3.0
+        self._spo2_drop_delay_samples = max(
+            0, int(round(self._spo2_drop_delay_sec * publish_rate_hz))
+        )
+
+        # publishレートは後続の計算にも使う
+        self.publish_rate_hz = publish_rate_hz
+
         # レートに応じてデータを送信
         self.timer = self.create_timer(1.0 / publish_rate_hz, self.publish_vital_data)
 
@@ -50,6 +65,24 @@ class VitalSensorNode(Node):
         self.get_logger().info('バイタルセンサーノード（カスタムメッセージ版）を起動しました')
         self.get_logger().info(f'患者ID: {self.patient_id}')
         self.get_logger().info(f'publish_rate_hz: {publish_rate_hz}')
+        self.get_logger().info(f'scenario: {self.scenario!r}')
+
+    def _compute_oxygen_saturation(self, base_oxygen_saturation: int) -> int:
+        if self.scenario in {'spo2_drop'}:
+            # まずは高めの値を維持し、その後に段階的に低下させる
+            # 例（1Hzの場合）: 0-2秒は 98%、以降 2%ずつ低下し最終的に 88% で下げ止め
+            start = 98
+            drop_step = 2
+            min_value = 88
+
+            steps = max(0, self.measurement_count - self._spo2_drop_delay_samples)
+            value = start - drop_step * steps
+            value = max(min_value, value)
+            return int(max(0, min(100, value)))
+
+        # 通常シナリオ: 小さなランダム変動
+        value = int(base_oxygen_saturation + random.randint(-2, 2))
+        return int(max(0, min(100, value)))
 
     def generate_realistic_vitals(self):
         """現実的なバイタルサインを生成."""
@@ -78,7 +111,7 @@ class VitalSensorNode(Node):
         msg.blood_pressure_systolic = int(base_blood_pressure_sys + random.randint(-10, 15))
         msg.blood_pressure_diastolic = int(base_blood_pressure_dia + random.randint(-8, 10))
         msg.body_temperature = float(base_temperature + random.uniform(-0.5, 0.8))
-        msg.oxygen_saturation = int(base_oxygen_saturation + random.randint(-2, 2))
+        msg.oxygen_saturation = self._compute_oxygen_saturation(base_oxygen_saturation)
 
         # ステータス
         msg.status = "monitoring"
