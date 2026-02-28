@@ -24,6 +24,7 @@ import threading
 from typing import Dict
 from typing import List
 from typing import Optional
+from typing import Tuple
 
 import rclpy
 from rclpy._rclpy_pybind11 import RCLError
@@ -31,6 +32,10 @@ from rclpy.node import Node
 from rclpy.parameter import Parameter
 
 from medical_interfaces.msg import VitalSigns
+
+from medical_robot_sim.advisory_engine import calc_alert
+from medical_robot_sim.anomaly_detector import detect_anomalies
+from medical_robot_sim.types import AnomalyEvent
 
 
 class IcuMonitorNode(Node):
@@ -73,6 +78,10 @@ class IcuMonitorNode(Node):
         self._message_counts: Dict[str, int] = {pid: 0 for pid in patient_ids}
         self._latest: Dict[str, VitalSigns] = {}
         self._latest_stamp_ns: Dict[str, int] = {}
+        self._latest_events: Dict[str, List[AnomalyEvent]] = {pid: [] for pid in patient_ids}
+        self._latest_major_event: Dict[str, Optional[AnomalyEvent]] = {
+            pid: None for pid in patient_ids
+        }
 
         for pid in patient_ids:
             topic = f'/{pid}/{vitals_topic}'
@@ -92,19 +101,74 @@ class IcuMonitorNode(Node):
         self._summary_timer = self.create_timer(1.0, self._refresh_dashboard)
 
     def _on_vitals(self, patient_ns: str, msg: VitalSigns) -> None:
+        now_ns = self.get_clock().now().nanoseconds
+
         self._message_counts[patient_ns] = self._message_counts.get(patient_ns, 0) + 1
         self._latest[patient_ns] = msg
-        self._latest_stamp_ns[patient_ns] = self.get_clock().now().nanoseconds
+        self._latest_stamp_ns[patient_ns] = now_ns
+
+        # 異常検知は「新規受信」時のみ行い、描画ループでの二重カウントを避ける
+        now_s = now_ns / 1e9
+        events = detect_anomalies(msg, ts=now_s)
+        self._latest_events[patient_ns] = events
+
+        if events:
+            major = self._pick_major_event(events)
+            if major is not None:
+                self._latest_major_event[patient_ns] = major
 
     @staticmethod
-    def _calc_alert(msg: VitalSigns) -> str:
-        if msg.oxygen_saturation < 90:
-            return 'RED'
-        if msg.heart_rate > 120:
-            return 'ORANGE'
-        if msg.blood_pressure_systolic > 160:
-            return 'YELLOW'
-        return 'OK'
+    def _event_rank(event: AnomalyEvent) -> Tuple[int, float]:
+        score = float(event.score) if event.score is not None else 0.0
+        if event.type in ('spo2_drop', 'hr_jump'):
+            return (2, score)
+        if event.type == 'flatline':
+            return (1, score)
+        return (0, score)
+
+    def _pick_major_event(self, events: List[AnomalyEvent]) -> Optional[AnomalyEvent]:
+        if not events:
+            return None
+        # 重大度優先→スコア優先
+        return max(events, key=lambda e: self._event_rank(e))
+
+    def _format_note(self, pid: str) -> str:
+        # STALE/NO DATA の場合は note を表示しない
+        if self._calc_data_state(pid) != 'FRESH':
+            return '-'
+
+        event = self._latest_major_event.get(pid)
+        if event is None:
+            return '-'
+
+        # 古いイベントは表示しない（直近window内のみ）
+        now_s = self.get_clock().now().nanoseconds / 1e9
+        if event.ts is not None and (now_s - float(event.ts)) > float(event.window_sec):
+            return '-'
+
+        field_map = {
+            'heart_rate': 'HR',
+            'oxygen_saturation': 'SpO2',
+            'blood_pressure_systolic': 'SBP',
+            'blood_pressure_diastolic': 'DBP',
+            'body_temperature': 'Temp',
+        }
+        field = field_map.get(event.field or '', event.field or '')
+
+        delta = event.delta
+        delta_str = ''
+        if isinstance(delta, (int, float)):
+            delta_str = f"{float(delta):+.0f}"
+
+        if event.type == 'flatline':
+            note = f"flat {field}".strip()
+        elif delta_str:
+            note = f"{event.type} {field}{delta_str}".strip()
+        else:
+            note = f"{event.type} {field}".strip()
+
+        # 表示幅を固定しやすいよう短くする
+        return note[:18]
 
     def _age_seconds(self, pid: str) -> Optional[float]:
         stamp_ns = self._latest_stamp_ns.get(pid)
@@ -136,7 +200,10 @@ class IcuMonitorNode(Node):
 
         if msg is None:
             # 未受信の患者は NO DATA 表示
-            return f"{pid:<10} | {'NO DATA':<7} | --- | ---- | ---/--- | ---- | {'N/A':>3}"
+            return (
+                f"{pid:<10} | {'NO DATA':<7} | --- | ---- | ---/--- | ---- | "
+                f"{'-':<18} | {'N/A':>3}"
+            )
 
         # STALE/NO DATA は vitals 由来のアラートより優先
         if data_state == 'NO DATA':
@@ -144,7 +211,8 @@ class IcuMonitorNode(Node):
         elif data_state == 'STALE':
             alert = 'STALE'
         else:
-            alert = self._calc_alert(msg)
+            events = self._latest_events.get(pid, [])
+            alert = calc_alert(msg, events)
 
         age_s = self._age_seconds_str(pid)
         hr = int(msg.heart_rate)
@@ -152,10 +220,11 @@ class IcuMonitorNode(Node):
         sys_bp = int(msg.blood_pressure_systolic)
         dia_bp = int(msg.blood_pressure_diastolic)
         temp = float(msg.body_temperature)
+        note = self._format_note(pid)
 
         return (
             f"{pid:<10} | {alert:<7} | {hr:>3} | {spo2:>4} | {sys_bp:>3}/{dia_bp:<3} | "
-            f"{temp:>4.1f} | {age_s:>3}"
+            f"{temp:>4.1f} | {note:<18} | {age_s:>3}"
         )
 
     def _render(self) -> str:
@@ -164,7 +233,7 @@ class IcuMonitorNode(Node):
         line = '-' * max(40, min(term_width, 140))
 
         title = f"ICU DASHBOARD  (patients={len(self._patient_ids)})"
-        header = "pid        | alert   |  HR | SpO2 | BP      | Temp | age"
+        header = "pid        | alert   |  HR | SpO2 | BP      | Temp | note               | age"
 
         rows = [self._render_row(pid, self._latest.get(pid)) for pid in self._patient_ids]
         return "\n".join([title, line, header, line, *rows, line])

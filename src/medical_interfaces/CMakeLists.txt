@@ -12,6 +12,9 @@ find_package(rosidl_default_generators REQUIRED)
 # メッセージファイルの登録
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/VitalSigns.msg"
+  "msg/Alert.msg"
 )
+
+ament_export_dependencies(rosidl_default_runtime)
 
 ament_package()

@@ -4,7 +4,7 @@
   <name>medical_robot_sim</name>
   <version>0.0.0</version>
   <description>医療ロボットシミュレーションパッケージ</description>
-  <maintainer email="yohei@todo.todo">yohei</maintainer>
+  <maintainer email="tukino@todo.todo">tukino</maintainer>
   <license>Apache-2.0</license>
 
   <!-- ビルド時依存関係 -->

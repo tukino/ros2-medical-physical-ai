@@ -36,9 +36,16 @@ def _parse_patients_csv(value: str) -> List[str]:
     return patient_ids
 
 
+def _parse_bool(value: str) -> bool:
+    return value.strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
 def _launch_setup(context, *args, **kwargs):
     patients_csv = LaunchConfiguration('patients').perform(context)
     patient_ids = _parse_patients_csv(patients_csv)
+
+    enable_alerts_str = LaunchConfiguration('enable_alerts').perform(context)
+    enable_alerts = _parse_bool(enable_alerts_str)
 
     sigterm_timeout = LaunchConfiguration('sigterm_timeout')
     sigkill_timeout = LaunchConfiguration('sigkill_timeout')
@@ -76,6 +83,23 @@ def _launch_setup(context, *args, **kwargs):
         )
     )
 
+    if enable_alerts:
+        actions.append(
+            Node(
+                package='medical_robot_sim',
+                executable='rule_alert_engine',
+                name='rule_alert_engine',
+                output='screen',
+                parameters=[
+                    {'patients': patient_ids},
+                    {'vitals_topic': 'patient_vitals'},
+                    {'alert_topic': 'alerts'},
+                ],
+                sigterm_timeout=sigterm_timeout,
+                sigkill_timeout=sigkill_timeout,
+            )
+        )
+
     return actions
 
 
@@ -86,6 +110,11 @@ def generate_launch_description() -> LaunchDescription:
                 'patients',
                 default_value='patient_01,patient_02,patient_03,patient_04,patient_05',
                 description='Comma-separated patient namespaces (e.g. patient_01,patient_02)',
+            ),
+            DeclareLaunchArgument(
+                'enable_alerts',
+                default_value='false',
+                description='If true, start rule_alert_engine (publishes /<patient>/alerts).',
             ),
             DeclareLaunchArgument(
                 'sigterm_timeout',
