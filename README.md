@@ -206,6 +206,59 @@ sudo apt install -y ros-humble-rqt-graph
 rqt_graph
 ```
 
+## Day6: flatline 検知（temporal_stability）
+
+HR・SpO2 が一定時間にわたりほぼ変化しない状態（センサ固着 / 重篤な安定化）を `temporal_stability` ルールで検知します。
+
+- `flatline.hr` : 末尾 8 サンプルの HR 変動幅（max−min）≤ 1.0 bpm
+- `flatline.spo2` : 末尾 8 サンプルの SpO2 変動幅 ≤ 1.0 %
+
+詳細は [docs/day6_flatline.md](docs/day6_flatline.md) を参照。
+
+### 起動
+
+```bash
+cd ~/ros2_ws
+source /opt/ros/humble/setup.bash
+source ~/ros2_ws/install/setup.bash
+
+ros2 launch medical_robot_sim icu_multi_patient.launch.py \
+  patients:=patient_01,patient_02 \
+  enable_alerts:=true \
+  scenario:=flatline \
+  enabled_rule_ids:=flatline.hr,flatline.spo2
+```
+
+### 確認（別ターミナル）
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/ros2_ws/install/setup.bash
+
+timeout 45s ros2 topic echo /patient_01/alerts
+```
+
+### 成功条件
+
+- `rule_id: flatline.hr` または `flatline.spo2` が出力される
+- `kind: temporal_stability`
+- `window_sec: 8`
+
+期待出力例（抜粋）:
+
+```text
+rule_id: flatline.hr
+kind: temporal_stability
+priority: YELLOW
+window_sec: 8
+field: heart_rate
+delta: 0.0
+```
+
+> **Note (WSL2)**: タイマー制約で発火まで最大 40 秒かかる場合は、起動コマンドに `flatline_history_size:=3` を追加してください（発火までのサンプル数を減らします）。
+
+---
+
 ## 想定出力例（1段）
 `icu_monitor` は 1 秒ごとにダッシュボード表示を更新します（launch 経由だとクリア上書きできず、ブロック表示になる場合があります）。
 

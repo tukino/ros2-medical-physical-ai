@@ -13,6 +13,7 @@
 - Alerts topic exists: /patient_XX/alerts (Alert.msg)
 - Basic alert rule example confirmed (e.g. roc.spo2_drop)
 - Clean shutdown on Ctrl+C (no stack trace; exit cleanly)
+- **Day6**: flatline detection (flatline.hr / flatline.spo2) via `temporal_stability` rules
 
 ## 2. Principles (Non-negotiables)
 - Rule-based first. LLM is strictly optional extension.

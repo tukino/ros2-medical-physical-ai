@@ -47,6 +47,16 @@ def _launch_setup(context, *args, **kwargs):
     enable_alerts_str = LaunchConfiguration('enable_alerts').perform(context)
     enable_alerts = _parse_bool(enable_alerts_str)
 
+    scenario = LaunchConfiguration('scenario').perform(context).strip()
+
+    enabled_rule_ids_str = LaunchConfiguration('enabled_rule_ids').perform(context).strip()
+    # CSV → list（空文字はそのまま渡すと空配列扱い）
+    enabled_rule_ids = [x.strip() for x in enabled_rule_ids_str.split(',') if x.strip()]
+
+    flatline_history_size = int(LaunchConfiguration('flatline_history_size').perform(context))
+    flatline_hr_epsilon = float(LaunchConfiguration('flatline_hr_epsilon').perform(context))
+    flatline_spo2_epsilon = float(LaunchConfiguration('flatline_spo2_epsilon').perform(context))
+
     sigterm_timeout = LaunchConfiguration('sigterm_timeout')
     sigkill_timeout = LaunchConfiguration('sigkill_timeout')
 
@@ -57,6 +67,10 @@ def _launch_setup(context, *args, **kwargs):
 
     # 患者ごとに vital_sensor を namespace 付きで起動
     for pid in patient_ids:
+        sensor_params: list = [{'patient_id': pid}]
+        if scenario:
+            sensor_params.append({'scenario': scenario})
+
         actions.append(
             Node(
                 package='medical_robot_sim',
@@ -64,7 +78,7 @@ def _launch_setup(context, *args, **kwargs):
                 name='vital_sensor',
                 namespace=pid,
                 output='screen',
-                parameters=[{'patient_id': pid}],
+                parameters=sensor_params,
                 sigterm_timeout=sigterm_timeout,
                 sigkill_timeout=sigkill_timeout,
             )
@@ -84,17 +98,24 @@ def _launch_setup(context, *args, **kwargs):
     )
 
     if enable_alerts:
+        engine_params: list = [
+            {'patients': patient_ids},
+            {'vitals_topic': 'patient_vitals'},
+            {'alert_topic': 'alerts'},
+            {'flatline_history_size': flatline_history_size},
+            {'flatline_hr_epsilon': flatline_hr_epsilon},
+            {'flatline_spo2_epsilon': flatline_spo2_epsilon},
+        ]
+        if enabled_rule_ids:
+            engine_params.append({'enabled_rule_ids': enabled_rule_ids})
+
         actions.append(
             Node(
                 package='medical_robot_sim',
                 executable='rule_alert_engine',
                 name='rule_alert_engine',
                 output='screen',
-                parameters=[
-                    {'patients': patient_ids},
-                    {'vitals_topic': 'patient_vitals'},
-                    {'alert_topic': 'alerts'},
-                ],
+                parameters=engine_params,
                 sigterm_timeout=sigterm_timeout,
                 sigkill_timeout=sigkill_timeout,
             )
@@ -113,8 +134,40 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 'enable_alerts',
-                default_value='false',
+                default_value='true',
                 description='If true, start rule_alert_engine (publishes /<patient>/alerts).',
+            ),
+            DeclareLaunchArgument(
+                'scenario',
+                default_value='',
+                description=(
+                    "vital_sensor scenario: '' (normal), 'spo2_drop', 'flatline'. "
+                    "Applied to all patients."
+                ),
+            ),
+            DeclareLaunchArgument(
+                'enabled_rule_ids',
+                default_value='',
+                description=(
+                    'Comma-separated rule IDs to enable in rule_alert_engine. '
+                    'Empty means all rules are active. '
+                    'e.g. flatline.hr,flatline.spo2'
+                ),
+            ),
+            DeclareLaunchArgument(
+                'flatline_history_size',
+                default_value='8',
+                description='Number of recent samples used for flatline detection.',
+            ),
+            DeclareLaunchArgument(
+                'flatline_hr_epsilon',
+                default_value='1.0',
+                description='Max HR range (max-min) to be classified as flatline [bpm].',
+            ),
+            DeclareLaunchArgument(
+                'flatline_spo2_epsilon',
+                default_value='1.0',
+                description='Max SpO2 range (max-min) to be classified as flatline [%].',
             ),
             DeclareLaunchArgument(
                 'sigterm_timeout',

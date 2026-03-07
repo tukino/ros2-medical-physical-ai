@@ -26,6 +26,7 @@ from rclpy.parameter import Parameter
 from medical_interfaces.msg import Alert
 from medical_interfaces.msg import VitalSigns
 
+from medical_robot_sim.alert_rules import RuleMatch
 from medical_robot_sim.alert_rules import RuleParams
 from medical_robot_sim.alert_rules import Sample
 from medical_robot_sim.alert_rules import evaluate_alert_rules
@@ -52,6 +53,109 @@ def _cooldown_for_priority(priority: str) -> float:
     return 30.0
 
 
+# temporal_stability（flatline）は継続中も定期再通知するためのクールダウン（秒）
+# edge trigger ではなく level trigger + cooldown を使う
+_TEMPORAL_STABILITY_COOLDOWN_SEC = 10.0
+
+
+def _build_enabled_rule_id_set(rule_ids: List[str]) -> Optional[set[str]]:
+    """enabled_rule_ids parameter value -> set.
+
+    - 空/未指定（空リスト相当）なら None を返し「全ルール有効」とみなす。
+    - 空文字や前後空白は除去。
+    """
+
+    cleaned = {str(x).strip() for x in (rule_ids or []) if str(x).strip()}
+    if not cleaned:
+        return None
+    return cleaned
+
+
+def _is_rule_enabled(rule_id: str, enabled_rule_ids: Optional[set[str]]) -> bool:
+    if enabled_rule_ids is None:
+        return True
+    return str(rule_id) in enabled_rule_ids
+
+
+def _edge_fire(
+    active_state: Dict[Tuple[str, str], bool],
+    *,
+    pid: str,
+    rule_id: str,
+    is_active: bool,
+) -> bool:
+    """Edge trigger: False->True の瞬間だけ True を返す.
+
+    enabled_rule_ids フィルタの外側で呼ぶことを想定。
+    """
+
+    key = (str(pid), str(rule_id))
+    was_active = bool(active_state.get(key, False))
+    active_state[key] = bool(is_active)
+    return bool(is_active) and not was_active
+
+
+def _select_edge_fired_matches(
+    *,
+    pid: str,
+    matches: Dict[str, RuleMatch],
+    enabled_rule_ids: Optional[set[str]],
+    active_state: Dict[Tuple[str, str], bool],
+) -> List[RuleMatch]:
+    """enabled_rule_ids と edge-trigger を加味して publish 対象だけ返す.
+
+    temporal_stability 種別は除外する（level trigger 経路で処理する）。
+    """
+
+    fired: List[RuleMatch] = []
+    for _key, match in matches.items():
+        # temporal_stability は別経路（level trigger）で処理するのでスキップ
+        if str(match.kind) == 'temporal_stability':
+            continue
+        rid = str(match.rule_id)
+        if not _is_rule_enabled(rid, enabled_rule_ids):
+            continue
+        if _edge_fire(
+            active_state,
+            pid=str(pid),
+            rule_id=rid,
+            is_active=bool(match.active),
+        ):
+            fired.append(match)
+    return fired
+
+
+def _select_level_fired_matches(
+    *,
+    pid: str,
+    matches: Dict[str, RuleMatch],
+    enabled_rule_ids: Optional[set[str]],
+    last_emit_ts: Dict[Tuple[str, str], float],
+    now_s: float,
+    cooldown_sec: float,
+) -> List[RuleMatch]:
+    """temporal_stability 種別向け: active=True かつ cooldown 経過していれば返す.
+
+    エッジトリガは使わず、cooldown が経過するたびに再発火する（level trigger）。
+    """
+
+    fired: List[RuleMatch] = []
+    for _key, match in matches.items():
+        if str(match.kind) != 'temporal_stability':
+            continue
+        rid = str(match.rule_id)
+        if not _is_rule_enabled(rid, enabled_rule_ids):
+            continue
+        if not bool(match.active):
+            continue
+        key = (str(pid), rid)
+        last = last_emit_ts.get(key)
+        if last is not None and (float(now_s) - float(last)) < float(cooldown_sec):
+            continue
+        fired.append(match)
+    return fired
+
+
 class RuleAlertEngineNode(Node):
     def __init__(self):
         super().__init__('rule_alert_engine')
@@ -66,6 +170,14 @@ class RuleAlertEngineNode(Node):
         # 変化率（rate-of-change）ルールのしきい値
         self.declare_parameter('spo2_drop_threshold', 4.0)
         self.declare_parameter('hr_jump_threshold', 20.0)
+
+        # flatline（時間的安定性）ルールのパラメータ
+        self.declare_parameter('flatline_history_size', 8)
+        self.declare_parameter('flatline_hr_epsilon', 1.0)
+        self.declare_parameter('flatline_spo2_epsilon', 1.0)
+
+        # publish 対象ルール（空/未指定なら全て有効）
+        self.declare_parameter('enabled_rule_ids', Parameter.Type.STRING_ARRAY)
 
         patient_ids = list(
             self.get_parameter('patients').get_parameter_value().string_array_value
@@ -83,6 +195,14 @@ class RuleAlertEngineNode(Node):
 
         spo2_drop_threshold = float(self.get_parameter('spo2_drop_threshold').value)
         hr_jump_threshold = float(self.get_parameter('hr_jump_threshold').value)
+
+        flatline_history_size = int(self.get_parameter('flatline_history_size').value)
+        flatline_hr_epsilon = float(self.get_parameter('flatline_hr_epsilon').value)
+        flatline_spo2_epsilon = float(self.get_parameter('flatline_spo2_epsilon').value)
+
+        enabled_rule_ids_raw = list(
+            self.get_parameter('enabled_rule_ids').get_parameter_value().string_array_value
+        )
 
         patient_ids = [str(pid).strip().lstrip('/') for pid in patient_ids if str(pid).strip()]
         vitals_topic = vitals_topic.strip().lstrip('/')
@@ -111,6 +231,10 @@ class RuleAlertEngineNode(Node):
         self._history_size = history_size
         self._spo2_drop_threshold = spo2_drop_threshold
         self._hr_jump_threshold = hr_jump_threshold
+        self._flatline_history_size = flatline_history_size
+        self._flatline_hr_epsilon = flatline_hr_epsilon
+        self._flatline_spo2_epsilon = flatline_spo2_epsilon
+        self._enabled_rule_ids = _build_enabled_rule_id_set(enabled_rule_ids_raw)
 
         self._subscriptions = []
         self._pubs: Dict[str, rclpy.publisher.Publisher] = {}
@@ -147,6 +271,15 @@ class RuleAlertEngineNode(Node):
         self.get_logger().info(
             f'spo2_drop_threshold={spo2_drop_threshold}, hr_jump_threshold={hr_jump_threshold}'
         )
+        self.get_logger().info(
+            f'flatline_history_size={flatline_history_size}, '
+            f'flatline_hr_epsilon={flatline_hr_epsilon}, '
+            f'flatline_spo2_epsilon={flatline_spo2_epsilon}'
+        )
+        if self._enabled_rule_ids is None:
+            self.get_logger().info('enabled_rule_ids=ALL')
+        else:
+            self.get_logger().info(f'enabled_rule_ids={sorted(self._enabled_rule_ids)}')
 
     def _emit(self, pid: str, alert_msg: Alert, cooldown_sec: float) -> None:
         key = (pid, alert_msg.rule_id)
@@ -154,6 +287,10 @@ class RuleAlertEngineNode(Node):
 
         last = self._last_emit_ts.get(key)
         if last is not None and (now_s - float(last)) < float(cooldown_sec):
+            self.get_logger().debug(
+                f'[{pid}] emit skipped (cooldown): rule_id={alert_msg.rule_id} '
+                f'elapsed={now_s - float(last):.1f}s < cooldown={cooldown_sec:.0f}s'
+            )
             return
 
         pub = self._pubs.get(pid)
@@ -192,10 +329,12 @@ class RuleAlertEngineNode(Node):
         return msg
 
     def _edge_fire(self, pid: str, rule_id: str, is_active: bool) -> bool:
-        key = (pid, rule_id)
-        was_active = self._active.get(key, False)
-        self._active[key] = bool(is_active)
-        return bool(is_active) and not bool(was_active)
+        return _edge_fire(
+            self._active,
+            pid=str(pid),
+            rule_id=str(rule_id),
+            is_active=bool(is_active),
+        )
 
     def _on_vitals(self, pid: str, msg: VitalSigns) -> None:
         ts = _now_s(self)
@@ -219,13 +358,42 @@ class RuleAlertEngineNode(Node):
             history_size=int(self._history_size),
             spo2_drop_threshold=float(self._spo2_drop_threshold),
             hr_jump_threshold=float(self._hr_jump_threshold),
+            flatline_history_size=int(self._flatline_history_size),
+            flatline_hr_epsilon=float(self._flatline_hr_epsilon),
+            flatline_spo2_epsilon=float(self._flatline_spo2_epsilon),
         )
         matches = evaluate_alert_rules(list(hist), params)
 
-        for rule_id, match in matches.items():
-            if not self._edge_fire(pid, rule_id, bool(match.active)):
-                continue
+        # デバッグ: flatline の active 状態をログに出す（DEBUG レベル）
+        for fl_rule_id in ('flatline.hr', 'flatline.spo2'):
+            m = matches.get(fl_rule_id)
+            if m is not None and _is_rule_enabled(fl_rule_id, self._enabled_rule_ids):
+                self.get_logger().debug(
+                    f'[DBG][{pid}] {fl_rule_id} active={m.active} '
+                    f'delta={m.delta} history_len={len(hist)}'
+                )
 
+        # edge trigger: single / roc / combination 系ルール
+        edge_fired = _select_edge_fired_matches(
+            pid=str(pid),
+            matches=matches,
+            enabled_rule_ids=self._enabled_rule_ids,
+            active_state=self._active,
+        )
+
+        # level trigger: temporal_stability (flatline) 系ルール
+        level_fired = _select_level_fired_matches(
+            pid=str(pid),
+            matches=matches,
+            enabled_rule_ids=self._enabled_rule_ids,
+            last_emit_ts=self._last_emit_ts,
+            now_s=ts,
+            cooldown_sec=_TEMPORAL_STABILITY_COOLDOWN_SEC,
+        )
+
+        # level_fired は cooldown 更新を _emit に任せるが、
+        # _emit の cooldown_sec は 0 を渡して二重チェックを避ける
+        for match in list(edge_fired) + list(level_fired):
             a = self._build_alert(
                 pid=pid,
                 rule_id=match.rule_id,
@@ -239,7 +407,12 @@ class RuleAlertEngineNode(Node):
                 delta=match.delta,
                 score=match.score,
             )
-            self._emit(pid, a, _cooldown_for_priority(a.priority))
+            if match.kind == 'temporal_stability':
+                # level trigger 経路: cooldown は _select_level_fired_matches で
+                # 既にチェック済みなので、ここでは記録だけ行う（cooldown_sec=0 渡し）
+                self._emit(pid, a, 0.0)
+            else:
+                self._emit(pid, a, _cooldown_for_priority(a.priority))
 
 
 def main(args=None):
