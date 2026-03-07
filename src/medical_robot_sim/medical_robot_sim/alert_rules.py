@@ -36,6 +36,12 @@ class RuleParams:
     spo2_drop_threshold: float = 4.0
     hr_jump_threshold: float = 20.0
 
+    # flatline（時間的安定性）パラメータ
+    # 末尾 N 件で max-min ≤ epsilon のとき flatline と判定する
+    flatline_history_size: int = 8
+    flatline_hr_epsilon: float = 1.0
+    flatline_spo2_epsilon: float = 1.0
+
 
 @dataclass(frozen=True, slots=True)
 class RuleMatch:
@@ -199,5 +205,64 @@ def evaluate_alert_rules(history: Sequence[Sample], params: RuleParams) -> Dict[
         window_sec=int(params.history_size),
         active=bool(combo_active),
     )
+
+    # --- 時間的安定性（flatline）ルール ---
+    # 末尾 flatline_history_size 件の max-min が epsilon 以下のとき発火
+    fl_window = int(params.flatline_history_size)
+    if len(history) >= fl_window:
+        recent = list(history)[-fl_window:]
+
+        hr_fl_vals = [float(s.heart_rate) for s in recent]
+        hr_fl_range = max(hr_fl_vals) - min(hr_fl_vals)
+        hr_flat = hr_fl_range <= float(params.flatline_hr_epsilon)
+        matches['flatline.hr'] = RuleMatch(
+            rule_id='flatline.hr',
+            kind='temporal_stability',
+            priority='YELLOW',
+            message=f'心拍数(HR)が直近{fl_window}サンプル間で変動極小（flatline）',
+            window_sec=fl_window,
+            field='heart_rate',
+            value=float(current.heart_rate),
+            delta=float(hr_fl_range),
+            score=1.0 if hr_flat else 0.0,
+            active=bool(hr_flat),
+        )
+
+        spo2_fl_vals = [float(s.oxygen_saturation) for s in recent]
+        spo2_fl_range = max(spo2_fl_vals) - min(spo2_fl_vals)
+        spo2_flat = spo2_fl_range <= float(params.flatline_spo2_epsilon)
+        matches['flatline.spo2'] = RuleMatch(
+            rule_id='flatline.spo2',
+            kind='temporal_stability',
+            priority='YELLOW',
+            message=f'SpO2 が直近{fl_window}サンプル間で変動極小（flatline）',
+            window_sec=fl_window,
+            field='oxygen_saturation',
+            value=float(current.oxygen_saturation),
+            delta=float(spo2_fl_range),
+            score=1.0 if spo2_flat else 0.0,
+            active=bool(spo2_flat),
+        )
+    else:
+        matches['flatline.hr'] = RuleMatch(
+            rule_id='flatline.hr',
+            kind='temporal_stability',
+            priority='YELLOW',
+            message=f'心拍数(HR)が直近{fl_window}サンプル間で変動極小（flatline）',
+            window_sec=fl_window,
+            field='heart_rate',
+            value=float(current.heart_rate),
+            active=False,
+        )
+        matches['flatline.spo2'] = RuleMatch(
+            rule_id='flatline.spo2',
+            kind='temporal_stability',
+            priority='YELLOW',
+            message=f'SpO2 が直近{fl_window}サンプル間で変動極小（flatline）',
+            window_sec=fl_window,
+            field='oxygen_saturation',
+            value=float(current.oxygen_saturation),
+            active=False,
+        )
 
     return matches

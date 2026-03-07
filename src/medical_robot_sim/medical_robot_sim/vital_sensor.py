@@ -44,6 +44,7 @@ class VitalSensorNode(Node):
         # シナリオ（デモ/再現性向け）
         # - '' / 'normal': 通常のランダム変動
         # - 'spo2_drop': 開始数秒後からSpO2を段階的に下げ、roc.spo2_drop を確実に誘発
+        # - 'flatline': HR と SpO2 を固定値で連投し、flatline.hr / flatline.spo2 を確実に誘発
         self.declare_parameter('scenario', '')
         self.scenario = str(self.get_parameter('scenario').value)
 
@@ -52,6 +53,12 @@ class VitalSensorNode(Node):
         self._spo2_drop_delay_samples = max(
             0, int(round(self._spo2_drop_delay_sec * publish_rate_hz))
         )
+
+        # flatline シナリオで固定送信する値
+        self.declare_parameter('flatline_hr_value', 72)
+        self.declare_parameter('flatline_spo2_value', 98)
+        self._flatline_hr_value = int(self.get_parameter('flatline_hr_value').value)
+        self._flatline_spo2_value = int(self.get_parameter('flatline_spo2_value').value)
 
         # publishレートは後続の計算にも使う
         self.publish_rate_hz = publish_rate_hz
@@ -80,9 +87,23 @@ class VitalSensorNode(Node):
             value = max(min_value, value)
             return int(max(0, min(100, value)))
 
+        if self.scenario == 'flatline':
+            # 固定値を返す（flatline.spo2 を確実に誘発）
+            return int(max(0, min(100, self._flatline_spo2_value)))
+
         # 通常シナリオ: 小さなランダム変動
         value = int(base_oxygen_saturation + random.randint(-2, 2))
         return int(max(0, min(100, value)))
+
+    def _compute_heart_rate(self, base_heart_rate: int, time_factor: float) -> int:
+        """心拍数を計算する（シナリオに応じて変動パターンを切り替える）."""
+        if self.scenario == 'flatline':
+            # 固定値を返す（flatline.hr を確実に誘発）
+            return int(self._flatline_hr_value)
+
+        # 通常シナリオ: ランダム変動 + サイン波
+        value = base_heart_rate + random.randint(-8, 12) + 2 * math.sin(time_factor)
+        return int(value)
 
     def generate_realistic_vitals(self):
         """現実的なバイタルサインを生成."""
@@ -105,7 +126,7 @@ class VitalSensorNode(Node):
 
         # バイタルサイン測定値（型安全な代入）
         # 正常：
-        msg.heart_rate = int(base_heart_rate + random.randint(-8, 12) + 2 * math.sin(time_factor))
+        msg.heart_rate = self._compute_heart_rate(base_heart_rate, time_factor)
         # テスト用（意図的エラー）：
         # msg.heart_rate = "invalid_string"  # 文字列を整数フィールドに代入
         msg.blood_pressure_systolic = int(base_blood_pressure_sys + random.randint(-10, 15))
