@@ -1,0 +1,33 @@
+# alert_rules.yaml
+#
+# rule_alert_engine が読み込む外部設定ファイル。
+# 起動時に rules_path:=/path/to/this/file で指定する。
+#
+# 優先順位: ROS param (launch arg) > YAML > コード内デフォルト
+#
+# 未記載のキーはコード内デフォルト値が使われる。
+# enabled_rule_ids が空リストの場合は「全ルール有効」として扱われる。
+
+rule_config:
+  # SpO2 の変化率ルール: window 内の最大低下量がこの値を超えると roc.spo2_drop を発火
+  spo2_drop_threshold: 4.0
+
+  # 心拍数の変化率ルール: window 内の最大上昇量がこの値を超えると roc.hr_jump を発火
+  hr_jump_threshold: 20.0
+
+  # flatline 判定に使う直近サンプル数
+  flatline_history_size: 8
+
+  # flatline 判定: 直近 N 件の HR の max-min がこの値以下なら flatline とみなす [bpm]
+  flatline_hr_epsilon: 1.0
+
+  # flatline 判定: 直近 N 件の SpO2 の max-min がこの値以下なら flatline とみなす [%]
+  flatline_spo2_epsilon: 1.0
+
+  # 有効にするルール ID のリスト（空 = 全ルール有効）
+  # 例:
+  #   enabled_rule_ids:
+  #     - flatline.hr
+  #     - flatline.spo2
+  #     - roc.spo2_drop
+  enabled_rule_ids: []

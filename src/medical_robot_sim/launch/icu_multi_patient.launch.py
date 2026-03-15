@@ -21,6 +21,7 @@ ICU multi-patient launch (ROS 2 Humble).
 
 from __future__ import annotations
 
+import os
 from typing import List
 
 from launch import LaunchDescription
@@ -28,6 +29,7 @@ from launch.actions import DeclareLaunchArgument
 from launch.actions import OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from ament_index_python.packages import get_package_share_directory
 
 
 def _parse_patients_csv(value: str) -> List[str]:
@@ -38,6 +40,47 @@ def _parse_patients_csv(value: str) -> List[str]:
 
 def _parse_bool(value: str) -> bool:
     return value.strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+def _package_share_rules_path() -> str:
+    try:
+        package_share = get_package_share_directory('medical_robot_sim')
+    except Exception:
+        return ''
+    candidate = os.path.join(package_share, 'config', 'alert_rules.yaml')
+    return candidate if os.path.isfile(candidate) else ''
+
+
+def _source_tree_rules_path() -> str:
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidate = os.path.normpath(os.path.join(here, '..', 'config', 'alert_rules.yaml'))
+    return candidate if os.path.isfile(candidate) else ''
+
+
+def _resolve_rules_path(path: str) -> str:
+    raw = str(path).strip()
+    if not raw:
+        return ''
+    expanded = os.path.expandvars(os.path.expanduser(raw))
+    if os.path.isabs(expanded):
+        return os.path.normpath(expanded)
+
+    try:
+        package_share = get_package_share_directory('medical_robot_sim')
+    except Exception:
+        package_share = ''
+    if package_share:
+        share_candidate = os.path.join(package_share, expanded)
+        if os.path.isfile(share_candidate):
+            return os.path.normpath(share_candidate)
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    source_root = os.path.normpath(os.path.join(here, '..'))
+    source_candidate = os.path.join(source_root, expanded)
+    if os.path.isfile(source_candidate):
+        return os.path.normpath(source_candidate)
+
+    return os.path.normpath(expanded)
 
 
 def _launch_setup(context, *args, **kwargs):
@@ -52,6 +95,12 @@ def _launch_setup(context, *args, **kwargs):
     enabled_rule_ids_str = LaunchConfiguration('enabled_rule_ids').perform(context).strip()
     # CSV → list（空文字はそのまま渡すと空配列扱い）
     enabled_rule_ids = [x.strip() for x in enabled_rule_ids_str.split(',') if x.strip()]
+
+    # Day7: 外部設定ファイルのパス（空文字 = YAML 読み込みなし）
+    rules_path = LaunchConfiguration('rules_path').perform(context).strip()
+    if not rules_path:
+        rules_path = _package_share_rules_path() or _source_tree_rules_path()
+    rules_path = _resolve_rules_path(rules_path)
 
     flatline_history_size = int(LaunchConfiguration('flatline_history_size').perform(context))
     flatline_hr_epsilon = float(LaunchConfiguration('flatline_hr_epsilon').perform(context))
@@ -106,6 +155,8 @@ def _launch_setup(context, *args, **kwargs):
             {'flatline_hr_epsilon': flatline_hr_epsilon},
             {'flatline_spo2_epsilon': flatline_spo2_epsilon},
         ]
+        if rules_path:
+            engine_params.append({'rules_path': rules_path})
         if enabled_rule_ids:
             engine_params.append({'enabled_rule_ids': enabled_rule_ids})
 
@@ -125,6 +176,7 @@ def _launch_setup(context, *args, **kwargs):
 
 
 def generate_launch_description() -> LaunchDescription:
+    default_rules_path = _package_share_rules_path() or _source_tree_rules_path()
     return LaunchDescription(
         [
             DeclareLaunchArgument(
@@ -152,6 +204,15 @@ def generate_launch_description() -> LaunchDescription:
                     'Comma-separated rule IDs to enable in rule_alert_engine. '
                     'Empty means all rules are active. '
                     'e.g. flatline.hr,flatline.spo2'
+                ),
+            ),
+            DeclareLaunchArgument(
+                'rules_path',
+                default_value=default_rules_path,
+                description=(
+                    '[Day7] Path to alert_rules.yaml. '
+                    'Empty means no YAML is loaded (code defaults are used). '
+                    'e.g. rules_path:=/path/to/config/alert_rules.yaml'
                 ),
             ),
             DeclareLaunchArgument(

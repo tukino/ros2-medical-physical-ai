@@ -28,6 +28,9 @@ setup(
         #       先にディレクトリを作る目的で空エントリを追加する
         (os.path.join('share', package_name, 'launch'), []),
         (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
+        # Day7: config ディレクトリ（alert_rules.yaml など）
+        (os.path.join('share', package_name, 'config'), []),
+        (os.path.join('share', package_name, 'config'), glob('config/*.yaml')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
