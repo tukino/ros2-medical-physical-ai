@@ -15,6 +15,7 @@ import math
 import signal
 import sys
 import threading
+import traceback
 from collections import deque
 from typing import Deque, Dict, List, Optional, Tuple
 
@@ -184,25 +185,43 @@ class RuleAlertEngineNode(Node):
                 )
             rules_path = resolved_path
 
+        if rules_path:
+            self.get_logger().info(f'[Day7] rules_path={rules_path!r}')
+        else:
+            self.get_logger().info('[Day7] rules_path is empty; using code defaults')
+
         yaml_cfg: dict = {}
         if rules_path:
             try:
                 yaml_cfg = load_rule_config(rules_path)
-                self.get_logger().info(f'[Day7] alert_rules.yaml を読み込みました: {rules_path!r}')
+                self.get_logger().info(f'[Day7] alert_rules.yaml loaded: {rules_path!r}')
+
+                yaml_flatline_history = yaml_cfg.get('flatline_history_size', 'default')
+                yaml_flatline_hr_eps = yaml_cfg.get('flatline_hr_epsilon', 'default')
+                yaml_flatline_spo2_eps = yaml_cfg.get('flatline_spo2_epsilon', 'default')
+                yaml_enabled_rule_ids = yaml_cfg.get('enabled_rule_ids', 'default')
+
+                self.get_logger().info(
+                    '[Day7] yaml_config values: '
+                    f'flatline_history_size={yaml_flatline_history}, '
+                    f'flatline_hr_epsilon={yaml_flatline_hr_eps}, '
+                    f'flatline_spo2_epsilon={yaml_flatline_spo2_eps}, '
+                    f'enabled_rule_ids={yaml_enabled_rule_ids}'
+                )
             except RuleConfigLoadError as exc:
                 self.get_logger().error(
-                    f'[Day7] rules_path の読み込みに失敗しました: {exc}\n'
-                    'コード内デフォルト値で続行します。'
+                    f'[Day7] rules_path load failed: {exc}\n'
+                    'Falling back to code defaults.'
                 )
                 yaml_cfg = {}
             except Exception as exc:
                 self.get_logger().error(
-                    f'[Day7] rules_path の読み込み中に例外が発生しました: {exc!r}\n'
-                    'コード内デフォルト値で続行します。'
+                    f'[Day7] rules_path load exception: {exc!r}\n'
+                    'Falling back to code defaults.'
                 )
                 yaml_cfg = {}
         else:
-            self.get_logger().info('[Day7] rules_path 未指定: コード内デフォルト値を使用します')
+            self.get_logger().info('[Day7] rules_path not provided; using code defaults')
 
         # --- Step2: 残りのパラメータを宣言する ---
         # 優先順位: ROS param (launch arg) > YAML > コード内デフォルト
@@ -238,10 +257,7 @@ class RuleAlertEngineNode(Node):
         # publish 対象ルール（空/未指定なら全て有効）
         # YAML に enabled_rule_ids が記載されていればそれをデフォルトとして使う
         yaml_rule_ids = get_string_list(yaml_cfg, 'enabled_rule_ids', [])
-        if yaml_rule_ids:
-            self.declare_parameter('enabled_rule_ids', yaml_rule_ids)
-        else:
-            self.declare_parameter('enabled_rule_ids', Parameter.Type.STRING_ARRAY)
+        self.declare_parameter('enabled_rule_ids', list(yaml_rule_ids))
 
         patient_ids = list(
             self.get_parameter('patients').get_parameter_value().string_array_value
@@ -328,8 +344,6 @@ class RuleAlertEngineNode(Node):
             self._pubs[pid] = self.create_publisher(Alert, alerts_abs, 10)
 
         self.get_logger().info('rule_alert_engine を起動しました')
-        if rules_path:
-            self.get_logger().info(f'[Day7] rules_path={rules_path!r}')
         self.get_logger().info(f'patients={patient_ids}')
         self.get_logger().info(f"vitals_topic='{vitals_topic}'")
         self.get_logger().info(f"alert_topic='{alert_topic}'")
@@ -548,7 +562,18 @@ def main(args=None):
                     node.destroy_node()
                 except Exception:
                     pass
-    except Exception:
+    except Exception as exc:
+        err = traceback.format_exc()
+        try:
+            rclpy.logging.get_logger('rule_alert_engine').error(
+                f'Unhandled exception during startup: {exc!r}\n{err}'
+            )
+        except Exception:
+            pass
+        try:
+            sys.stderr.write(err + '\n')
+        except Exception:
+            pass
         return 0
     finally:
         try:

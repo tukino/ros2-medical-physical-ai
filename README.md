@@ -264,7 +264,7 @@ delta: 0.0
 アラートルールのしきい値を YAML ファイルで管理できるようになりました。
 コードを変更せずとも、感度調整やルール有効/無効の切り替えが可能です。
 
-詳細は [docs/day7_rule_config.md](docs/day7_rule_config.md) を参照。
+詳細は [docs/day7_rule_externalization.md](docs/day7_rule_externalization.md) を参照。
 
 ### 設定ファイル
 
@@ -282,7 +282,9 @@ rule_config:
   enabled_rule_ids: []           # 空 = 全ルール有効
 ```
 
-### YAML を使って起動
+### 起動（YAML 既定パス）
+
+rules_path 未指定でも、パッケージ内の `config/alert_rules.yaml` が読み込まれます。
 
 ```bash
 cd ~/ros2_ws
@@ -290,8 +292,34 @@ source /opt/ros/humble/setup.bash
 source ~/ros2_ws/install/setup.bash
 
 ros2 launch medical_robot_sim icu_multi_patient.launch.py \
-  rules_path:=$(ros2 pkg prefix medical_robot_sim)/share/medical_robot_sim/config/alert_rules.yaml
+  enable_alerts:=true
 ```
+
+### enabled_rule_ids の切り替え例
+
+flatline.hr だけを有効化:
+
+```bash
+ros2 launch medical_robot_sim icu_multi_patient.launch.py \
+  enable_alerts:=true \
+  scenario:=flatline \
+  enabled_rule_ids:=flatline.hr
+```
+
+flatline.spo2 だけを有効化:
+
+```bash
+ros2 launch medical_robot_sim icu_multi_patient.launch.py \
+  enable_alerts:=true \
+  scenario:=flatline \
+  enabled_rule_ids:=flatline.spo2
+```
+
+### 成功条件
+
+- `rules_path` 未指定でも YAML が読み込まれる
+- `/patient_01/alerts` に `flatline.hr` または `flatline.spo2` が出力される
+- Day6 の flatline 検知が維持される
 
 ### 優先順位
 
