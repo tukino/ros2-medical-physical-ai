@@ -14,6 +14,7 @@
 - Basic alert rule example confirmed (e.g. roc.spo2_drop)
 - Clean shutdown on Ctrl+C (no stack trace; exit cleanly)
 - **Day6**: flatline detection (flatline.hr / flatline.spo2) via `temporal_stability` rules
+- **Day7**: Config externalization (`config/alert_rules.yaml`, `rules_path` launch arg, `rule_config_loader.py`)
 
 ## 2. Principles (Non-negotiables)
 - Rule-based first. LLM is strictly optional extension.
@@ -35,10 +36,14 @@
   - tests cover boundary cases
   - docs/day6_*.md explains behavior and verification
 
-### Day7: Config externalization
-- Introduce rules.yaml (or rules.json)
-- Launch arg rules_path:=...
-- README: how to add a rule without code changes
+### Day7: Config externalization (Done)
+- `config/alert_rules.yaml` 追加
+- `rule_config_loader.py`（純粋関数 YAML ローダー）
+- `rule_alert_engine` に `rules_path` パラメータ追加
+- launch arg `rules_path:=...` に対応
+- 優先順位: ROS param > YAML > コード内デフォルト
+- テスト: `test_rule_config_loader.py`
+- ドキュメント: `docs/day7_rule_config.md`
 
 ### Day8: Observability / reproducibility
 - scripts/repro_day6_alerts.sh

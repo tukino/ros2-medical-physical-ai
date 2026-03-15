@@ -30,6 +30,12 @@ from medical_robot_sim.alert_rules import RuleMatch
 from medical_robot_sim.alert_rules import RuleParams
 from medical_robot_sim.alert_rules import Sample
 from medical_robot_sim.alert_rules import evaluate_alert_rules
+from medical_robot_sim.rule_config_loader import RuleConfigLoadError
+from medical_robot_sim.rule_config_loader import get_float
+from medical_robot_sim.rule_config_loader import get_int
+from medical_robot_sim.rule_config_loader import get_string_list
+from medical_robot_sim.rule_config_loader import load_rule_config
+from medical_robot_sim.rule_config_loader import resolve_rules_path
 
 
 def _now_s(node: Node) -> float:
@@ -160,6 +166,49 @@ class RuleAlertEngineNode(Node):
     def __init__(self):
         super().__init__('rule_alert_engine')
 
+        # --- Step1: rules_path を先に宣言・取得して YAML を読み込む ---
+        self.declare_parameter('rules_path', '')
+        rules_path = str(self.get_parameter('rules_path').value).strip()
+
+        if rules_path:
+            try:
+                from ament_index_python.packages import get_package_share_directory
+                package_share = get_package_share_directory('medical_robot_sim')
+            except Exception:
+                package_share = None
+
+            resolved_path = resolve_rules_path(rules_path, base_dir=package_share)
+            if resolved_path != rules_path:
+                self.get_logger().info(
+                    f'[Day7] rules_path resolved: {rules_path!r} -> {resolved_path!r}'
+                )
+            rules_path = resolved_path
+
+        yaml_cfg: dict = {}
+        if rules_path:
+            try:
+                yaml_cfg = load_rule_config(rules_path)
+                self.get_logger().info(f'[Day7] alert_rules.yaml を読み込みました: {rules_path!r}')
+            except RuleConfigLoadError as exc:
+                self.get_logger().error(
+                    f'[Day7] rules_path の読み込みに失敗しました: {exc}\n'
+                    'コード内デフォルト値で続行します。'
+                )
+                yaml_cfg = {}
+            except Exception as exc:
+                self.get_logger().error(
+                    f'[Day7] rules_path の読み込み中に例外が発生しました: {exc!r}\n'
+                    'コード内デフォルト値で続行します。'
+                )
+                yaml_cfg = {}
+        else:
+            self.get_logger().info('[Day7] rules_path 未指定: コード内デフォルト値を使用します')
+
+        # --- Step2: 残りのパラメータを宣言する ---
+        # 優先順位: ROS param (launch arg) > YAML > コード内デフォルト
+        # declare_parameter の default_value が YAML 由来になるため、
+        # launch arg で明示指定された場合は自動的に launch arg 値が勝つ。
+
         self.declare_parameter('patients', Parameter.Type.STRING_ARRAY)
         self.declare_parameter('vitals_topic', 'patient_vitals')
         self.declare_parameter('alert_topic', 'alerts')
@@ -168,16 +217,31 @@ class RuleAlertEngineNode(Node):
         self.declare_parameter('history_size', 10)
 
         # 変化率（rate-of-change）ルールのしきい値
-        self.declare_parameter('spo2_drop_threshold', 4.0)
-        self.declare_parameter('hr_jump_threshold', 20.0)
+        self.declare_parameter(
+            'spo2_drop_threshold', get_float(yaml_cfg, 'spo2_drop_threshold', 4.0)
+        )
+        self.declare_parameter(
+            'hr_jump_threshold', get_float(yaml_cfg, 'hr_jump_threshold', 20.0)
+        )
 
         # flatline（時間的安定性）ルールのパラメータ
-        self.declare_parameter('flatline_history_size', 8)
-        self.declare_parameter('flatline_hr_epsilon', 1.0)
-        self.declare_parameter('flatline_spo2_epsilon', 1.0)
+        self.declare_parameter(
+            'flatline_history_size', get_int(yaml_cfg, 'flatline_history_size', 8)
+        )
+        self.declare_parameter(
+            'flatline_hr_epsilon', get_float(yaml_cfg, 'flatline_hr_epsilon', 1.0)
+        )
+        self.declare_parameter(
+            'flatline_spo2_epsilon', get_float(yaml_cfg, 'flatline_spo2_epsilon', 1.0)
+        )
 
         # publish 対象ルール（空/未指定なら全て有効）
-        self.declare_parameter('enabled_rule_ids', Parameter.Type.STRING_ARRAY)
+        # YAML に enabled_rule_ids が記載されていればそれをデフォルトとして使う
+        yaml_rule_ids = get_string_list(yaml_cfg, 'enabled_rule_ids', [])
+        if yaml_rule_ids:
+            self.declare_parameter('enabled_rule_ids', yaml_rule_ids)
+        else:
+            self.declare_parameter('enabled_rule_ids', Parameter.Type.STRING_ARRAY)
 
         patient_ids = list(
             self.get_parameter('patients').get_parameter_value().string_array_value
@@ -264,6 +328,8 @@ class RuleAlertEngineNode(Node):
             self._pubs[pid] = self.create_publisher(Alert, alerts_abs, 10)
 
         self.get_logger().info('rule_alert_engine を起動しました')
+        if rules_path:
+            self.get_logger().info(f'[Day7] rules_path={rules_path!r}')
         self.get_logger().info(f'patients={patient_ids}')
         self.get_logger().info(f"vitals_topic='{vitals_topic}'")
         self.get_logger().info(f"alert_topic='{alert_topic}'")

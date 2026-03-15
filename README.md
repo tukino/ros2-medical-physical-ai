@@ -259,6 +259,50 @@ delta: 0.0
 
 ---
 
+## Day7: アラートルール設定の外部化
+
+アラートルールのしきい値を YAML ファイルで管理できるようになりました。
+コードを変更せずとも、感度調整やルール有効/無効の切り替えが可能です。
+
+詳細は [docs/day7_rule_config.md](docs/day7_rule_config.md) を参照。
+
+### 設定ファイル
+
+```
+src/medical_robot_sim/config/alert_rules.yaml
+```
+
+```yaml
+rule_config:
+  spo2_drop_threshold: 4.0       # roc.spo2_drop 発火閾値
+  hr_jump_threshold: 20.0        # roc.hr_jump 発火閾値
+  flatline_history_size: 8       # flatline 判定サンプル数
+  flatline_hr_epsilon: 1.0       # flatline HR 閾値 [bpm]
+  flatline_spo2_epsilon: 1.0     # flatline SpO2 閾値 [%]
+  enabled_rule_ids: []           # 空 = 全ルール有効
+```
+
+### YAML を使って起動
+
+```bash
+cd ~/ros2_ws
+source /opt/ros/humble/setup.bash
+source ~/ros2_ws/install/setup.bash
+
+ros2 launch medical_robot_sim icu_multi_patient.launch.py \
+  rules_path:=$(ros2 pkg prefix medical_robot_sim)/share/medical_robot_sim/config/alert_rules.yaml
+```
+
+### 優先順位
+
+```
+ROS param (launch arg) > alert_rules.yaml > コード内デフォルト
+```
+
+従来の launch 引数（`flatline_history_size:=3` など）は引き続き動作し、YAML より優先されます。
+
+---
+
 ## 想定出力例（1段）
 `icu_monitor` は 1 秒ごとにダッシュボード表示を更新します（launch 経由だとクリア上書きできず、ブロック表示になる場合があります）。
 

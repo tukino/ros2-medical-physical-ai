@@ -53,6 +53,9 @@ def _launch_setup(context, *args, **kwargs):
     # CSV → list（空文字はそのまま渡すと空配列扱い）
     enabled_rule_ids = [x.strip() for x in enabled_rule_ids_str.split(',') if x.strip()]
 
+    # Day7: 外部設定ファイルのパス（空文字 = YAML 読み込みなし）
+    rules_path = LaunchConfiguration('rules_path').perform(context).strip()
+
     flatline_history_size = int(LaunchConfiguration('flatline_history_size').perform(context))
     flatline_hr_epsilon = float(LaunchConfiguration('flatline_hr_epsilon').perform(context))
     flatline_spo2_epsilon = float(LaunchConfiguration('flatline_spo2_epsilon').perform(context))
@@ -106,6 +109,8 @@ def _launch_setup(context, *args, **kwargs):
             {'flatline_hr_epsilon': flatline_hr_epsilon},
             {'flatline_spo2_epsilon': flatline_spo2_epsilon},
         ]
+        if rules_path:
+            engine_params.append({'rules_path': rules_path})
         if enabled_rule_ids:
             engine_params.append({'enabled_rule_ids': enabled_rule_ids})
 
@@ -152,6 +157,15 @@ def generate_launch_description() -> LaunchDescription:
                     'Comma-separated rule IDs to enable in rule_alert_engine. '
                     'Empty means all rules are active. '
                     'e.g. flatline.hr,flatline.spo2'
+                ),
+            ),
+            DeclareLaunchArgument(
+                'rules_path',
+                default_value='',
+                description=(
+                    '[Day7] Path to alert_rules.yaml. '
+                    'Empty means no YAML is loaded (code defaults are used). '
+                    'e.g. rules_path:=/path/to/config/alert_rules.yaml'
                 ),
             ),
             DeclareLaunchArgument(
