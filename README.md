@@ -331,6 +331,33 @@ ROS param (launch arg) > alert_rules.yaml > コード内デフォルト
 
 ---
 
+## Day8: QoS設計（vitals/alerts）
+
+vitals（`/<patient>/patient_vitals`）と alerts（`/<patient>/alerts`）の QoS を暗黙デフォルトにせず、明示して観測・切替できるようにしました。
+
+詳細は [docs/day8_qos.md](docs/day8_qos.md) を参照。
+
+### QoS の観測（verbose）
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/ros2_ws/install/setup.bash
+
+ros2 topic info --verbose /patient_01/patient_vitals
+ros2 topic info --verbose /patient_01/alerts
+```
+
+### launch 引数で QoS を切り替える例
+
+```bash
+ros2 launch medical_robot_sim icu_multi_patient.launch.py \
+  patients:=patient_01 \
+  enable_alerts:=true \
+  alerts_qos_durability:=transient_local
+```
+
+---
+
 ## 想定出力例（1段）
 `icu_monitor` は 1 秒ごとにダッシュボード表示を更新します（launch 経由だとクリア上書きできず、ブロック表示になる場合があります）。
 

@@ -1,68 +1,290 @@
-# Plan / Roadmap (for Copilot)
+# ROS2 Medical Physical AI - Master Plan
 
-## 0. Goal
-- Build a ROS2 (Humble) multi-patient vital monitoring simulation.
-- Provide rule-based alerting + anomaly detection as the core.
-- Treat LLM as an optional extension (advisory only), not the core decision maker.
-- Keep the repo reproducible: build/run/record/replay and testable.
+## 目的
+医療×Physical AI領域において、  
+「センサー → 分散処理 → 判断 → アクション」までを一貫して設計できる能力を獲得する。
 
-## 1. Current Status (Done)
-- Multi patient vitals publishing: /patient_XX/patient_vitals
-- ICU dashboard display via icu_monitor
-- rosbag2 recording confirmed
-- Alerts topic exists: /patient_XX/alerts (Alert.msg)
-- Basic alert rule example confirmed (e.g. roc.spo2_drop)
-- Clean shutdown on Ctrl+C (no stack trace; exit cleanly)
-- **Day6**: flatline detection (flatline.hr / flatline.spo2) via `temporal_stability` rules
-- **Day7**: Config externalization (`config/alert_rules.yaml`, `rules_path` launch arg, `rule_config_loader.py`)
+---
 
-## 2. Principles (Non-negotiables)
-- Rule-based first. LLM is strictly optional extension.
-- Every feature must include:
-  - a minimal reproducible command/script
-  - at least one automated test
-  - a short doc page under docs/
-- Prefer small incremental changes and backward compatibility.
-- Configuration should be externalizable (Day7): rules in yaml/json, not hard-coded.
+# Phase1: 基本パイプライン（完了）
 
-## 3. Next Milestones (Priority Order)
-### Day6: Expand "alert arena" without LLM
-- Add at least one of:
-  - flatline detection
-  - outlier detection
-  - combination rule (multi-signal)
-- Done criteria:
-  - new rule_id emits on /patient_XX/alerts
-  - tests cover boundary cases
-  - docs/day6_*.md explains behavior and verification
+## Day1: センサーシミュレーション
+**何をやるか**
+- 仮想的なバイタルデータを生成する
 
-### Day7: Config externalization (Done)
-- `config/alert_rules.yaml` 追加
-- `rule_config_loader.py`（純粋関数 YAML ローダー）
-- `rule_alert_engine` に `rules_path` パラメータ追加
-- launch arg `rules_path:=...` に対応
-- 優先順位: ROS param > YAML > コード内デフォルト
-- テスト: `test_rule_config_loader.py`
-- ドキュメント: `docs/day7_rule_config.md`
+**なぜやるか**
+- 実機がなくても開発できる土台を作る
 
-### Day8: Observability / reproducibility
-- scripts/repro_day6_alerts.sh
-- rosbag play based verification (record once, replay often)
+**ユーザー視点の価値**
+- 「データが流れる状態」を最短で作れる
 
-### Day9: LLM extension "hook" only
-- advisory_engine interface + dummy implementation
-- topic: /patient_XX/advisories
-- no external API calls by default
+---
 
-## 4. Naming / Conventions
-- Topics:
-  - vitals: /patient_XX/patient_vitals
-  - alerts: /patient_XX/alerts
-  - (future) advisories: /patient_XX/advisories
-- rule_id: "<category>.<rule_name>" (e.g. flatline.hr, outlier.spo2, combo.spo2_hr)
-- priority: RED / YELLOW / INFO
+## Day2: topic設計
+**何をやるか**
+- ROS2のtopic構造を定義する
 
-## 5. Non-goals
-- Medical device compliance or clinical diagnosis.
-- Sophisticated UI.
-- Robust anti-cheat or security hardening.
+**なぜやるか**
+- データの意味を明確にするため
+
+**ユーザー視点の価値**
+- 「どこに何のデータが流れるか」を把握できる
+
+---
+
+## Day3: multi-patient
+**何をやるか**
+- 複数患者を同時に扱う
+
+**なぜやるか**
+- スケーラブルな設計にするため
+
+**ユーザー視点の価値**
+- 単体ではなく「システム」として扱える
+
+---
+
+## Day4: monitoring
+**何をやるか**
+- 状態を可視化する
+
+**なぜやるか**
+- システムの挙動を観測可能にする
+
+**ユーザー視点の価値**
+- 「何が起きているか」が即座に分かる
+
+---
+
+## Day5: alert検知
+**何をやるか**
+- 異常を検知するルールを実装
+
+**なぜやるか**
+- データを「意味」に変換するため
+
+**ユーザー視点の価値**
+- 「危険かどうか」を判断できる
+
+---
+
+## Day6: flatline検知
+**何をやるか**
+- 時系列の変化がない状態を検知
+
+**なぜやるか**
+- 単発値ではなく「時間」を扱うため
+
+**ユーザー視点の価値**
+- センサー異常・状態停止を検知できる
+
+---
+
+## Day7: ルール外部化（YAML）
+**何をやるか**
+- ルールをコードから分離
+
+**なぜやるか**
+- 運用で調整可能にするため
+
+**ユーザー視点の価値**
+- コード変更なしで挙動を変えられる
+
+---
+
+# Phase2: システム設計（現在）
+
+## Day8: QoS設計
+**何をやるか**
+- 通信の信頼性・遅延特性を設計
+
+**なぜやるか**
+- データの重要度に応じて通信品質を変えるため
+
+**ユーザー視点の価値**
+- 「落としていいデータ」と「絶対に落とせないデータ」を区別できる
+
+---
+
+## Day9: Lifecycle Node導入
+**何をやるか**
+- ノードの状態管理（起動/停止/再初期化）
+
+**なぜやるか**
+- システムを安全に制御するため
+
+**ユーザー視点の価値**
+- 「安全に起動・停止できるシステム」になる
+
+---
+
+## Day10: Fault Injection
+**何をやるか**
+- 意図的に障害を発生させる
+
+**なぜやるか**
+- 実運用の異常を再現するため
+
+**ユーザー視点の価値**
+- 壊れたときの挙動を事前に把握できる
+
+---
+
+## Day11: Logging / Tracing
+**何をやるか**
+- ログとトレースを整備
+
+**なぜやるか**
+- 問題の原因を追跡できるようにするため
+
+**ユーザー視点の価値**
+- 「なぜ起きたか」を説明できる
+
+---
+
+## Day12: rosbagによる再現性検証
+**何をやるか**
+- データを記録・再生する
+
+**なぜやるか**
+- 実験の再現性を担保するため
+
+**ユーザー視点の価値**
+- 同じ条件で何度でも検証できる
+
+---
+
+# Phase3: Physical化
+
+## Day13: 実センサー接続（I2C/SPI）
+**何をやるか**
+- 実デバイスからデータ取得
+
+**なぜやるか**
+- 仮想から現実へ移行するため
+
+**ユーザー視点の価値**
+- 実世界のデータを扱える
+
+---
+
+## Day14: Edgeデバイス（Jetson）
+**何をやるか**
+- 組込み環境で動作させる
+
+**なぜやるか**
+- 実運用環境に近づけるため
+
+**ユーザー視点の価値**
+- 「現場で動くシステム」になる
+
+---
+
+## Day15: EEG / BCI入力
+**何をやるか**
+- 脳波などの信号を入力にする
+
+**なぜやるか**
+- 人間拡張インタフェースに接続するため
+
+**ユーザー視点の価値**
+- 「人間の状態」を直接扱える
+
+---
+
+# Phase4: 応用
+
+## Day16: 異常検知AI
+**何をやるか**
+- ルールベースからAIへ拡張
+
+**なぜやるか**
+- 複雑なパターンを扱うため
+
+**ユーザー視点の価値**
+- 未知の異常を検知できる
+
+---
+
+## Day17: マルチノード協調
+**何をやるか**
+- ノード間で協調動作
+
+**なぜやるか**
+- システム全体として最適化するため
+
+**ユーザー視点の価値**
+- 「単体機能」から「統合システム」へ進化
+
+---
+
+## Day18: リアルタイム制御（閉ループ）
+**何をやるか**
+- 入力→判断→制御をループ化
+
+**なぜやるか**
+- 自律システムにするため
+
+**ユーザー視点の価値**
+- 「人を支援するシステム」が完成する
+
+---
+
+# 設計原則
+
+## 1. データ中心設計
+- topicの意味を最優先
+- QoSはデータの価値から決める
+
+## 2. 分離
+- ロジック（Python）
+- 設定（YAML）
+- 通信（QoS）
+
+## 3. 再現性
+- rosbag
+- docs
+- deterministic behavior
+
+## 4. 拡張性
+- multi-patient前提
+- edge対応前提
+
+---
+
+## 公開ログ方針（重要）
+
+本プロジェクトは「学習」ではなく「公開可能な成果物の蓄積」を目的とする。
+
+### 原則
+- すべてのDayはGitHubに記録する
+- 第三者が再現できる状態を維持する
+- docsは実装と同等に重要とする
+
+### 各Dayで必ず行うこと
+- docs/dayX.md を更新
+- specs/dayX を残す
+- 再現手順を記載する
+- commitを意味単位で行う
+
+### 禁止
+- ローカルのみで完結する作業
+- 再現できない実装
+- docs未更新でのcommit
+
+# 各Dayの進め方
+
+1. docs/dayX.md を作成
+2. specs/dayX を作成
+3. AIに実装させる
+4. 動作確認
+5. docs更新
+6. commit
+
+---
+
+# 完了基準
+
+- コードが動く
+- docsに再現手順がある
+- 設計意図を説明できる

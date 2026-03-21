@@ -17,6 +17,8 @@ from rclpy.executors import ExternalShutdownException
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 
+from medical_robot_sim.qos_profiles import build_qos_profile
+
 
 class VitalSensorNode(Node):
     """患者のバイタルサインを監視・送信するセンサーノード."""
@@ -24,11 +26,30 @@ class VitalSensorNode(Node):
     def __init__(self):
         super().__init__('vital_sensor')
 
+        # Day8: QoS params（launch から上書き可能）
+        self.declare_parameter('vitals_qos_depth', 10)
+        self.declare_parameter('vitals_qos_reliability', 'reliable')
+        self.declare_parameter('vitals_qos_durability', 'volatile')
+
+        vitals_qos_depth = int(self.get_parameter('vitals_qos_depth').value)
+        vitals_qos_reliability = str(self.get_parameter('vitals_qos_reliability').value)
+        vitals_qos_durability = str(self.get_parameter('vitals_qos_durability').value)
+
+        try:
+            vitals_qos = build_qos_profile(
+                depth=vitals_qos_depth,
+                reliability=vitals_qos_reliability,
+                durability=vitals_qos_durability,
+            )
+        except ValueError as exc:
+            self.get_logger().error(f"[Day8] Invalid vitals QoS params: {exc}")
+            raise SystemExit(2)
+
         # パブリッシャーの作成（カスタムメッセージ型を使用）
         self.publisher_ = self.create_publisher(
             VitalSigns,
             'patient_vitals',
-            10
+            vitals_qos,
         )
 
         # 患者ID（launch から parameter で上書き可能）
@@ -73,6 +94,11 @@ class VitalSensorNode(Node):
         self.get_logger().info(f'患者ID: {self.patient_id}')
         self.get_logger().info(f'publish_rate_hz: {publish_rate_hz}')
         self.get_logger().info(f'scenario: {self.scenario!r}')
+        self.get_logger().info(
+            '[Day8] vitals_qos='
+            f"KEEP_LAST depth={vitals_qos_depth}, reliability={vitals_qos_reliability}, "
+            f"durability={vitals_qos_durability}"
+        )
 
     def _compute_oxygen_saturation(self, base_oxygen_saturation: int) -> int:
         if self.scenario in {'spo2_drop'}:
