@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
-"""ルールベースのアラートエンジン.
+"""Lifecycle 対応のルールベースアラートエンジン.
 
-- 患者ごとに `/{pid}/{vitals_topic}` を subscribe（デフォルト: patient_vitals）
-- 患者ごとの履歴（deque）を用いてルール判定
-- `medical_interfaces/msg/Alert` を `/{pid}/{alert_topic}` に publish（デフォルト: alerts）
-- (patient_id, rule_id) ごとの cooldown（通知抑制）を実装
+- 対象 topics は classic 版と同一:
+  - subscribe: /<patient>/patient_vitals (default)
+  - publish:   /<patient>/alerts (default)
 
-このノードはサンプル用途のため、ルールセットを小さく明示的に保つ.
+Lifecycle state:
+- unconfigured: pub/sub を作らない
+- inactive:     内部状態を初期化（ルールパラメータ読み込み等）するが publish しない
+- active:       pub/sub を作成し、alerts を publish する
+- deactivate:   pub/sub を破棄し、publish を止める
+
+注意:
+- Day7/Day8 の parameter 群は classic 版と同様に受け取れるようにする。
+- clean shutdown（Ctrl+C）でスタックトレースを出さない。
 """
 
 from __future__ import annotations
@@ -21,7 +28,8 @@ from typing import Deque, Dict, List, Optional, Tuple
 
 import rclpy
 from rclpy._rclpy_pybind11 import RCLError
-from rclpy.node import Node
+from rclpy.lifecycle import LifecycleNode
+from rclpy.lifecycle import TransitionCallbackReturn
 from rclpy.parameter import Parameter
 
 from medical_interfaces.msg import Alert
@@ -40,12 +48,8 @@ from medical_robot_sim.rule_config_loader import resolve_rules_path
 from medical_robot_sim.qos_profiles import build_qos_profile
 
 
-def _now_s(node: Node) -> float:
+def _now_s(node: LifecycleNode) -> float:
     return float(node.get_clock().now().nanoseconds) / 1e9
-
-
-def _nan() -> float:
-    return float('nan')
 
 
 def _cooldown_for_priority(priority: str) -> float:
@@ -92,10 +96,7 @@ def _edge_fire(
     rule_id: str,
     is_active: bool,
 ) -> bool:
-    """Edge trigger: False->True の瞬間だけ True を返す.
-
-    enabled_rule_ids フィルタの外側で呼ぶことを想定。
-    """
+    """Edge trigger: False->True の瞬間だけ True を返す."""
 
     key = (str(pid), str(rule_id))
     was_active = bool(active_state.get(key, False))
@@ -117,7 +118,6 @@ def _select_edge_fired_matches(
 
     fired: List[RuleMatch] = []
     for _key, match in matches.items():
-        # temporal_stability は別経路（level trigger）で処理するのでスキップ
         if str(match.kind) == 'temporal_stability':
             continue
         rid = str(match.rule_id)
@@ -142,10 +142,7 @@ def _select_level_fired_matches(
     now_s: float,
     cooldown_sec: float,
 ) -> List[RuleMatch]:
-    """temporal_stability 種別向け: active=True かつ cooldown 経過していれば返す.
-
-    エッジトリガは使わず、cooldown が経過するたびに再発火する（level trigger）。
-    """
+    """temporal_stability 種別向け: active=True かつ cooldown 経過していれば返す."""
 
     fired: List[RuleMatch] = []
     for _key, match in matches.items():
@@ -164,9 +161,12 @@ def _select_level_fired_matches(
     return fired
 
 
-class RuleAlertEngineNode(Node):
+class RuleAlertEngineLifecycleNode(LifecycleNode):
     def __init__(self):
         super().__init__('rule_alert_engine')
+
+        # Lifecycle 起動互換
+        self.declare_parameter('lifecycle_autostart', True)
 
         # --- Step1: rules_path を先に宣言・取得して YAML を読み込む ---
         self.declare_parameter('rules_path', '')
@@ -175,6 +175,7 @@ class RuleAlertEngineNode(Node):
         if rules_path:
             try:
                 from ament_index_python.packages import get_package_share_directory
+
                 package_share = get_package_share_directory('medical_robot_sim')
             except Exception:
                 package_share = None
@@ -226,16 +227,11 @@ class RuleAlertEngineNode(Node):
 
         # --- Step2: 残りのパラメータを宣言する ---
         # 優先順位: ROS param (launch arg) > YAML > コード内デフォルト
-        # declare_parameter の default_value が YAML 由来になるため、
-        # launch arg で明示指定された場合は自動的に launch arg 値が勝つ。
-
         self.declare_parameter('patients', Parameter.Type.STRING_ARRAY)
         self.declare_parameter('vitals_topic', 'patient_vitals')
         self.declare_parameter('alert_topic', 'alerts')
 
         # Day8: QoS params
-        # - vitals: subscribe
-        # - alerts: publish
         self.declare_parameter('vitals_qos_depth', 10)
         self.declare_parameter('vitals_qos_reliability', 'reliable')
         self.declare_parameter('vitals_qos_durability', 'volatile')
@@ -267,7 +263,6 @@ class RuleAlertEngineNode(Node):
         )
 
         # publish 対象ルール（空/未指定なら全て有効）
-        # YAML に enabled_rule_ids が記載されていればそれをデフォルトとして使う。
         # 空リストの場合、rclpy の型推論が曖昧になり BYTE_ARRAY 扱いになることがあるため、
         # 明示的に STRING_ARRAY として declare しておく（launch からの上書きを可能にする）。
         yaml_rule_ids = get_string_list(yaml_cfg, 'enabled_rule_ids', [])
@@ -286,15 +281,38 @@ class RuleAlertEngineNode(Node):
                 ]
             )
 
+        # runtime state
+        self._configured = False
+        self._active_state: bool = False
+
+        self._patient_ids: List[str] = []
+        self._vitals_topic: str = ''
+        self._alert_topic: str = ''
+
+        self._vitals_qos = None
+        self._alerts_qos = None
+
+        self._history_size: int = 10
+        self._spo2_drop_threshold: float = 4.0
+        self._hr_jump_threshold: float = 20.0
+        self._flatline_history_size: int = 8
+        self._flatline_hr_epsilon: float = 1.0
+        self._flatline_spo2_epsilon: float = 1.0
+        self._enabled_rule_ids: Optional[set[str]] = None
+
+        self._engine_subscriptions = []
+        self._engine_pubs: Dict[str, rclpy.publisher.Publisher] = {}
+
+        self._history: Dict[str, Deque[Sample]] = {}
+        self._active: Dict[Tuple[str, str], bool] = {}
+        self._last_emit_ts: Dict[Tuple[str, str], float] = {}
+
+    def _apply_parameters(self) -> None:
         patient_ids = list(
             self.get_parameter('patients').get_parameter_value().string_array_value
         )
-        vitals_topic = str(
-            self.get_parameter('vitals_topic').get_parameter_value().string_value
-        )
-        alert_topic = str(
-            self.get_parameter('alert_topic').get_parameter_value().string_value
-        )
+        vitals_topic = str(self.get_parameter('vitals_topic').value)
+        alert_topic = str(self.get_parameter('alert_topic').value)
 
         vitals_qos_depth = int(self.get_parameter('vitals_qos_depth').value)
         vitals_qos_reliability = str(self.get_parameter('vitals_qos_reliability').value)
@@ -358,6 +376,9 @@ class RuleAlertEngineNode(Node):
         self._vitals_topic = vitals_topic
         self._alert_topic = alert_topic
 
+        self._vitals_qos = vitals_qos
+        self._alerts_qos = alerts_qos
+
         self._history_size = history_size
         self._spo2_drop_threshold = spo2_drop_threshold
         self._hr_jump_threshold = hr_jump_threshold
@@ -366,34 +387,7 @@ class RuleAlertEngineNode(Node):
         self._flatline_spo2_epsilon = flatline_spo2_epsilon
         self._enabled_rule_ids = _build_enabled_rule_id_set(enabled_rule_ids_raw)
 
-        self._subscriptions = []
-        self._pubs: Dict[str, rclpy.publisher.Publisher] = {}
-
-        self._history: Dict[str, Deque[Sample]] = {
-            pid: deque(maxlen=self._history_size) for pid in patient_ids
-        }
-
-        # ルールごとの active 状態（エッジトリガ用）
-        self._active: Dict[Tuple[str, str], bool] = {}
-
-        # cooldown 用の時刻記録
-        self._last_emit_ts: Dict[Tuple[str, str], float] = {}
-
-        for pid in patient_ids:
-            vitals_abs = f'/{pid}/{vitals_topic}'
-            alerts_abs = f'/{pid}/{alert_topic}'
-
-            sub = self.create_subscription(
-                VitalSigns,
-                vitals_abs,
-                lambda msg, pid=pid: self._on_vitals(pid, msg),
-                vitals_qos,
-            )
-            self._subscriptions.append(sub)
-
-            self._pubs[pid] = self.create_publisher(Alert, alerts_abs, alerts_qos)
-
-        self.get_logger().info('rule_alert_engine を起動しました')
+        self.get_logger().info('[Lifecycle] configured parameters applied')
         self.get_logger().info(f'patients={patient_ids}')
         self.get_logger().info(f"vitals_topic='{vitals_topic}'")
         self.get_logger().info(f"alert_topic='{alert_topic}'")
@@ -407,21 +401,125 @@ class RuleAlertEngineNode(Node):
             f"KEEP_LAST depth={alerts_qos_depth}, reliability={alerts_qos_reliability}, "
             f"durability={alerts_qos_durability}"
         )
-        self.get_logger().info(f'history_size={history_size}')
-        self.get_logger().info(
-            f'spo2_drop_threshold={spo2_drop_threshold}, hr_jump_threshold={hr_jump_threshold}'
-        )
-        self.get_logger().info(
-            f'flatline_history_size={flatline_history_size}, '
-            f'flatline_hr_epsilon={flatline_hr_epsilon}, '
-            f'flatline_spo2_epsilon={flatline_spo2_epsilon}'
-        )
-        if self._enabled_rule_ids is None:
-            self.get_logger().info('enabled_rule_ids=ALL')
-        else:
-            self.get_logger().info(f'enabled_rule_ids={sorted(self._enabled_rule_ids)}')
+
+    def _destroy_io(self) -> None:
+        for sub in list(self._engine_subscriptions):
+            try:
+                self.destroy_subscription(sub)
+            except (ValueError, RCLError):
+                pass
+        self._engine_subscriptions = []
+
+        for pub in list(self._engine_pubs.values()):
+            try:
+                self.destroy_publisher(pub)
+            except Exception:
+                pass
+        self._engine_pubs = {}
+
+    def on_configure(self, _state) -> TransitionCallbackReturn:
+        try:
+            self._apply_parameters()
+
+            self._history = {
+                pid: deque(maxlen=int(self._history_size)) for pid in list(self._patient_ids)
+            }
+            self._active = {}
+            self._last_emit_ts = {}
+
+            self._configured = True
+            self._active_state = False
+            self.get_logger().info('[Lifecycle] on_configure -> SUCCESS')
+            return TransitionCallbackReturn.SUCCESS
+        except Exception as exc:
+            try:
+                self.get_logger().error(f'[Lifecycle] on_configure failed: {exc!r}')
+            except Exception:
+                pass
+            return TransitionCallbackReturn.FAILURE
+
+    def on_activate(self, _state) -> TransitionCallbackReturn:
+        if not self._configured:
+            return TransitionCallbackReturn.FAILURE
+
+        try:
+            self._destroy_io()
+
+            vitals_qos = self._vitals_qos
+            alerts_qos = self._alerts_qos
+            if vitals_qos is None or alerts_qos is None:
+                return TransitionCallbackReturn.FAILURE
+
+            for pid in list(self._patient_ids):
+                vitals_abs = f'/{pid}/{self._vitals_topic}'
+                alerts_abs = f'/{pid}/{self._alert_topic}'
+
+                sub = self.create_subscription(
+                    VitalSigns,
+                    vitals_abs,
+                    lambda msg, pid=pid: self._on_vitals(pid, msg),
+                    vitals_qos,
+                )
+                self._engine_subscriptions.append(sub)
+
+                self._engine_pubs[pid] = self.create_publisher(Alert, alerts_abs, alerts_qos)
+
+            self._active_state = True
+            self.get_logger().info('[Lifecycle] on_activate -> SUCCESS')
+            return TransitionCallbackReturn.SUCCESS
+        except Exception as exc:
+            try:
+                self.get_logger().error(f'[Lifecycle] on_activate failed: {exc!r}')
+            except Exception:
+                pass
+            return TransitionCallbackReturn.FAILURE
+
+    def on_deactivate(self, _state) -> TransitionCallbackReturn:
+        try:
+            self._destroy_io()
+
+            # 再現性を上げるため、deactivate 時に内部状態をクリア
+            self._active_state = False
+            self._history = {
+                pid: deque(maxlen=int(self._history_size)) for pid in list(self._patient_ids)
+            }
+            self._active = {}
+            self._last_emit_ts = {}
+
+            self.get_logger().info('[Lifecycle] on_deactivate -> SUCCESS')
+            return TransitionCallbackReturn.SUCCESS
+        except Exception as exc:
+            try:
+                self.get_logger().error(f'[Lifecycle] on_deactivate failed: {exc!r}')
+            except Exception:
+                pass
+            return TransitionCallbackReturn.FAILURE
+
+    def on_cleanup(self, _state) -> TransitionCallbackReturn:
+        try:
+            self._destroy_io()
+            self._configured = False
+            self._active_state = False
+            self._history = {}
+            self._active = {}
+            self._last_emit_ts = {}
+            self.get_logger().info('[Lifecycle] on_cleanup -> SUCCESS')
+            return TransitionCallbackReturn.SUCCESS
+        except Exception:
+            return TransitionCallbackReturn.FAILURE
+
+    def on_shutdown(self, _state) -> TransitionCallbackReturn:
+        try:
+            self._destroy_io()
+            self.get_logger().info('[Lifecycle] on_shutdown -> SUCCESS')
+            return TransitionCallbackReturn.SUCCESS
+        except Exception:
+            return TransitionCallbackReturn.FAILURE
 
     def _emit(self, pid: str, alert_msg: Alert, cooldown_sec: float) -> None:
+        if not self._active_state:
+            return
+
         key = (pid, alert_msg.rule_id)
         now_s = float(alert_msg.ts)
 
@@ -433,7 +531,7 @@ class RuleAlertEngineNode(Node):
             )
             return
 
-        pub = self._pubs.get(pid)
+        pub = self._engine_pubs.get(pid)
         if pub is None:
             return
         pub.publish(alert_msg)
@@ -468,18 +566,12 @@ class RuleAlertEngineNode(Node):
         msg.score = float(score)
         return msg
 
-    def _edge_fire(self, pid: str, rule_id: str, is_active: bool) -> bool:
-        return _edge_fire(
-            self._active,
-            pid=str(pid),
-            rule_id=str(rule_id),
-            is_active=bool(is_active),
-        )
-
     def _on_vitals(self, pid: str, msg: VitalSigns) -> None:
+        if not self._active_state:
+            return
+
         ts = _now_s(self)
 
-        # 履歴を保持（deque）
         sample = Sample(
             ts=ts,
             heart_rate=float(msg.heart_rate),
@@ -504,16 +596,6 @@ class RuleAlertEngineNode(Node):
         )
         matches = evaluate_alert_rules(list(hist), params)
 
-        # デバッグ: flatline の active 状態をログに出す（DEBUG レベル）
-        for fl_rule_id in ('flatline.hr', 'flatline.spo2'):
-            m = matches.get(fl_rule_id)
-            if m is not None and _is_rule_enabled(fl_rule_id, self._enabled_rule_ids):
-                self.get_logger().debug(
-                    f'[DBG][{pid}] {fl_rule_id} active={m.active} '
-                    f'delta={m.delta} history_len={len(hist)}'
-                )
-
-        # edge trigger: single / roc / combination 系ルール
         edge_fired = _select_edge_fired_matches(
             pid=str(pid),
             matches=matches,
@@ -521,7 +603,6 @@ class RuleAlertEngineNode(Node):
             active_state=self._active,
         )
 
-        # level trigger: temporal_stability (flatline) 系ルール
         level_fired = _select_level_fired_matches(
             pid=str(pid),
             matches=matches,
@@ -531,8 +612,6 @@ class RuleAlertEngineNode(Node):
             cooldown_sec=_TEMPORAL_STABILITY_COOLDOWN_SEC,
         )
 
-        # level_fired は cooldown 更新を _emit に任せるが、
-        # _emit の cooldown_sec は 0 を渡して二重チェックを避ける
         for match in list(edge_fired) + list(level_fired):
             a = self._build_alert(
                 pid=pid,
@@ -548,8 +627,6 @@ class RuleAlertEngineNode(Node):
                 score=match.score,
             )
             if match.kind == 'temporal_stability':
-                # level trigger 経路: cooldown は _select_level_fired_matches で
-                # 既にチェック済みなので、ここでは記録だけ行う（cooldown_sec=0 渡し）
                 self._emit(pid, a, 0.0)
             else:
                 self._emit(pid, a, _cooldown_for_priority(a.priority))
@@ -570,17 +647,33 @@ def main(args=None):
     signal.signal(signal.SIGINT, _request_shutdown)
     signal.signal(signal.SIGTERM, _request_shutdown)
 
-    node: Optional[RuleAlertEngineNode] = None
+    node: Optional[RuleAlertEngineLifecycleNode] = None
     executor = None
 
     try:
-        node = RuleAlertEngineNode()
+        node = RuleAlertEngineLifecycleNode()
 
         from rclpy.executors import ExternalShutdownException
         from rclpy.executors import SingleThreadedExecutor
 
         executor = SingleThreadedExecutor()
         executor.add_node(node)
+
+        # lifecycle_autostart=true の場合は configure->activate を自動で行う
+        # false の場合は unconfigured のまま待機し、外部から遷移させる
+        try:
+            autostart = bool(node.get_parameter('lifecycle_autostart').value)
+        except Exception:
+            autostart = True
+        if autostart:
+            try:
+                node.trigger_configure()
+                node.trigger_activate()
+            except Exception as exc:
+                try:
+                    node.get_logger().error(f'[Lifecycle] autostart failed: {exc!r}')
+                except Exception:
+                    pass
 
         try:
             while rclpy.ok() and not shutdown_requested.is_set():
@@ -609,15 +702,6 @@ def main(args=None):
                 pass
 
             if node is not None:
-                try:
-                    for sub in list(getattr(node, '_subscriptions', [])):
-                        try:
-                            node.destroy_subscription(sub)
-                        except (ValueError, RCLError):
-                            pass
-                except Exception:
-                    pass
-
                 try:
                     node.destroy_node()
                 except Exception:

@@ -49,6 +49,7 @@ setup(
             'medical_monitor = medical_robot_sim.medical_monitor:main',
             'icu_monitor = medical_robot_sim.icu_monitor:main',
             'rule_alert_engine = medical_robot_sim.rule_alert_engine:main',
+            'rule_alert_engine_lifecycle = medical_robot_sim.rule_alert_engine_lifecycle:main',
         ],
     },
 )

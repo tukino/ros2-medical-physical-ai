@@ -90,6 +90,10 @@ def _launch_setup(context, *args, **kwargs):
     enable_alerts_str = LaunchConfiguration('enable_alerts').perform(context)
     enable_alerts = _parse_bool(enable_alerts_str)
 
+    alerts_node_kind = LaunchConfiguration('alerts_node_kind').perform(context).strip().lower()
+    lifecycle_autostart_str = LaunchConfiguration('lifecycle_autostart').perform(context)
+    lifecycle_autostart = _parse_bool(lifecycle_autostart_str)
+
     scenario = LaunchConfiguration('scenario').perform(context).strip()
 
     enabled_rule_ids_str = LaunchConfiguration('enabled_rule_ids').perform(context).strip()
@@ -106,6 +110,15 @@ def _launch_setup(context, *args, **kwargs):
     flatline_hr_epsilon = float(LaunchConfiguration('flatline_hr_epsilon').perform(context))
     flatline_spo2_epsilon = float(LaunchConfiguration('flatline_spo2_epsilon').perform(context))
 
+    # Day8: QoS params
+    vitals_qos_depth = int(LaunchConfiguration('vitals_qos_depth').perform(context))
+    vitals_qos_reliability = LaunchConfiguration('vitals_qos_reliability').perform(context).strip()
+    vitals_qos_durability = LaunchConfiguration('vitals_qos_durability').perform(context).strip()
+
+    alerts_qos_depth = int(LaunchConfiguration('alerts_qos_depth').perform(context))
+    alerts_qos_reliability = LaunchConfiguration('alerts_qos_reliability').perform(context).strip()
+    alerts_qos_durability = LaunchConfiguration('alerts_qos_durability').perform(context).strip()
+
     sigterm_timeout = LaunchConfiguration('sigterm_timeout')
     sigkill_timeout = LaunchConfiguration('sigkill_timeout')
 
@@ -116,7 +129,12 @@ def _launch_setup(context, *args, **kwargs):
 
     # 患者ごとに vital_sensor を namespace 付きで起動
     for pid in patient_ids:
-        sensor_params: list = [{'patient_id': pid}]
+        sensor_params: list = [
+            {'patient_id': pid},
+            {'vitals_qos_depth': vitals_qos_depth},
+            {'vitals_qos_reliability': vitals_qos_reliability},
+            {'vitals_qos_durability': vitals_qos_durability},
+        ]
         if scenario:
             sensor_params.append({'scenario': scenario})
 
@@ -140,7 +158,13 @@ def _launch_setup(context, *args, **kwargs):
             executable='icu_monitor',
             name='icu_monitor',
             output='screen',
-            parameters=[{'patients': patient_ids}, {'vitals_topic': 'patient_vitals'}],
+            parameters=[
+                {'patients': patient_ids},
+                {'vitals_topic': 'patient_vitals'},
+                {'vitals_qos_depth': vitals_qos_depth},
+                {'vitals_qos_reliability': vitals_qos_reliability},
+                {'vitals_qos_durability': vitals_qos_durability},
+            ],
             sigterm_timeout=sigterm_timeout,
             sigkill_timeout=sigkill_timeout,
         )
@@ -151,6 +175,12 @@ def _launch_setup(context, *args, **kwargs):
             {'patients': patient_ids},
             {'vitals_topic': 'patient_vitals'},
             {'alert_topic': 'alerts'},
+            {'vitals_qos_depth': vitals_qos_depth},
+            {'vitals_qos_reliability': vitals_qos_reliability},
+            {'vitals_qos_durability': vitals_qos_durability},
+            {'alerts_qos_depth': alerts_qos_depth},
+            {'alerts_qos_reliability': alerts_qos_reliability},
+            {'alerts_qos_durability': alerts_qos_durability},
             {'flatline_history_size': flatline_history_size},
             {'flatline_hr_epsilon': flatline_hr_epsilon},
             {'flatline_spo2_epsilon': flatline_spo2_epsilon},
@@ -160,10 +190,15 @@ def _launch_setup(context, *args, **kwargs):
         if enabled_rule_ids:
             engine_params.append({'enabled_rule_ids': enabled_rule_ids})
 
+        engine_executable = 'rule_alert_engine'
+        if alerts_node_kind == 'lifecycle':
+            engine_executable = 'rule_alert_engine_lifecycle'
+            engine_params.append({'lifecycle_autostart': bool(lifecycle_autostart)})
+
         actions.append(
             Node(
                 package='medical_robot_sim',
-                executable='rule_alert_engine',
+                executable=engine_executable,
                 name='rule_alert_engine',
                 output='screen',
                 parameters=engine_params,
@@ -188,6 +223,16 @@ def generate_launch_description() -> LaunchDescription:
                 'enable_alerts',
                 default_value='true',
                 description='If true, start rule_alert_engine (publishes /<patient>/alerts).',
+            ),
+            DeclareLaunchArgument(
+                'alerts_node_kind',
+                default_value='classic',
+                description='[Day9] Alerts engine node kind: classic | lifecycle',
+            ),
+            DeclareLaunchArgument(
+                'lifecycle_autostart',
+                default_value='true',
+                description='[Day9] If true, lifecycle alerts engine auto configure->activate.',
             ),
             DeclareLaunchArgument(
                 'scenario',
@@ -230,6 +275,39 @@ def generate_launch_description() -> LaunchDescription:
                 default_value='1.0',
                 description='Max SpO2 range (max-min) to be classified as flatline [%].',
             ),
+
+            # Day8: QoS
+            DeclareLaunchArgument(
+                'vitals_qos_depth',
+                default_value='10',
+                description='[Day8] QoS depth for /<patient>/patient_vitals (KEEP_LAST).',
+            ),
+            DeclareLaunchArgument(
+                'vitals_qos_reliability',
+                default_value='reliable',
+                description="[Day8] QoS reliability for vitals: reliable | best_effort",
+            ),
+            DeclareLaunchArgument(
+                'vitals_qos_durability',
+                default_value='volatile',
+                description="[Day8] QoS durability for vitals: volatile | transient_local",
+            ),
+            DeclareLaunchArgument(
+                'alerts_qos_depth',
+                default_value='10',
+                description='[Day8] QoS depth for /<patient>/alerts (KEEP_LAST).',
+            ),
+            DeclareLaunchArgument(
+                'alerts_qos_reliability',
+                default_value='reliable',
+                description="[Day8] QoS reliability for alerts: reliable | best_effort",
+            ),
+            DeclareLaunchArgument(
+                'alerts_qos_durability',
+                default_value='volatile',
+                description="[Day8] QoS durability for alerts: volatile | transient_local",
+            ),
+
             DeclareLaunchArgument(
                 'sigterm_timeout',
                 default_value='5',

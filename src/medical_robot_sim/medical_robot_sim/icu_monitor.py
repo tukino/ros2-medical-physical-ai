@@ -35,6 +35,7 @@ from medical_interfaces.msg import VitalSigns
 
 from medical_robot_sim.advisory_engine import calc_alert
 from medical_robot_sim.anomaly_detector import detect_anomalies
+from medical_robot_sim.qos_profiles import build_qos_profile
 from medical_robot_sim.types import AnomalyEvent
 
 
@@ -46,6 +47,25 @@ class IcuMonitorNode(Node):
         #       反映されずにデフォルト扱いになることがあるため、型を明示して宣言する
         self.declare_parameter('patients', Parameter.Type.STRING_ARRAY)
         self.declare_parameter('vitals_topic', 'patient_vitals')
+
+        # Day8: QoS params（vitals subscribe）
+        self.declare_parameter('vitals_qos_depth', 10)
+        self.declare_parameter('vitals_qos_reliability', 'reliable')
+        self.declare_parameter('vitals_qos_durability', 'volatile')
+
+        vitals_qos_depth = int(self.get_parameter('vitals_qos_depth').value)
+        vitals_qos_reliability = str(self.get_parameter('vitals_qos_reliability').value)
+        vitals_qos_durability = str(self.get_parameter('vitals_qos_durability').value)
+
+        try:
+            vitals_qos = build_qos_profile(
+                depth=vitals_qos_depth,
+                reliability=vitals_qos_reliability,
+                durability=vitals_qos_durability,
+            )
+        except ValueError as exc:
+            self.get_logger().error(f"[Day8] Invalid vitals QoS params: {exc}")
+            raise SystemExit(2)
 
         patient_ids = list(
             self.get_parameter('patients').get_parameter_value().string_array_value
@@ -89,13 +109,18 @@ class IcuMonitorNode(Node):
                 VitalSigns,
                 topic,
                 lambda msg, pid=pid: self._on_vitals(pid, msg),
-                10,
+                vitals_qos,
             )
             self._subscriptions.append(sub)
 
         self.get_logger().info('ICU monitor を起動しました')
         self.get_logger().info(f"patients={patient_ids}")
         self.get_logger().info(f"vitals_topic='{vitals_topic}'")
+        self.get_logger().info(
+            '[Day8] vitals_qos='
+            f"KEEP_LAST depth={vitals_qos_depth}, reliability={vitals_qos_reliability}, "
+            f"durability={vitals_qos_durability}"
+        )
 
         # 1秒ごとにサマリー表示
         self._summary_timer = self.create_timer(1.0, self._refresh_dashboard)
