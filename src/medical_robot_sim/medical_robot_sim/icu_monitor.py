@@ -35,8 +35,29 @@ from medical_interfaces.msg import VitalSigns
 
 from medical_robot_sim.advisory_engine import calc_alert
 from medical_robot_sim.anomaly_detector import detect_anomalies
+from medical_robot_sim.observability import format_event
 from medical_robot_sim.qos_profiles import build_qos_profile
 from medical_robot_sim.types import AnomalyEvent
+
+
+def classify_patient_state(
+    age_sec: Optional[float],
+    *,
+    stale_after_sec: float = 3.0,
+    no_data_after_sec: float = 10.0,
+) -> str:
+    """Classify patient data state from last-seen age.
+
+    - FRESH:    age <= stale_after_sec
+    - STALE:    stale_after_sec < age <= no_data_after_sec
+    - NO_DATA:  age is None (never seen) or age > no_data_after_sec
+    """
+
+    if age_sec is None or float(age_sec) > float(no_data_after_sec):
+        return 'NO DATA'
+    if float(age_sec) > float(stale_after_sec):
+        return 'STALE'
+    return 'FRESH'
 
 
 class IcuMonitorNode(Node):
@@ -102,6 +123,9 @@ class IcuMonitorNode(Node):
         self._latest_major_event: Dict[str, Optional[AnomalyEvent]] = {
             pid: None for pid in patient_ids
         }
+
+        # Day11: observability (state transitions only)
+        self._last_patient_state: Dict[str, Optional[str]] = {pid: None for pid in patient_ids}
 
         for pid in patient_ids:
             topic = f'/{pid}/{vitals_topic}'
@@ -204,15 +228,41 @@ class IcuMonitorNode(Node):
 
     def _calc_data_state(self, pid: str) -> str:
         """Return data state based on last_seen age."""
-        # Thresholds:
-        # - STALE: > 3s
-        # - NO DATA: > 10s (or never seen)
         age_s = self._age_seconds(pid)
-        if age_s is None or age_s > 10.0:
-            return 'NO DATA'
-        if age_s > 3.0:
-            return 'STALE'
-        return 'FRESH'
+        return classify_patient_state(age_s, stale_after_sec=3.0, no_data_after_sec=10.0)
+
+    def _log_patient_state_if_changed(self, pid: str) -> None:
+        """Emit monitor.patient_state only on state changes (or first observation)."""
+
+        try:
+            age_s = self._age_seconds(pid)
+            state = self._calc_data_state(pid)
+            last = self._latest.get(pid)
+            last_measurement_id = int(last.measurement_id) if last is not None else None
+
+            prev = self._last_patient_state.get(pid)
+            if prev == state:
+                return
+
+            self._last_patient_state[pid] = state
+
+            # Keep fields minimal and grep-friendly.
+            self.get_logger().info(
+                format_event(
+                    'monitor.patient_state',
+                    node=str(self.get_name()),
+                    ns=str(self.get_namespace()),
+                    pid=str(pid),
+                    state=str(state),
+                    age_sec=(float(f"{age_s:.1f}") if age_s is not None else 'N/A'),
+                    last_measurement_id=(
+                        int(last_measurement_id) if last_measurement_id is not None else 'N/A'
+                    ),
+                )
+            )
+        except Exception:
+            # Observability must never break the monitor.
+            return
 
     def _age_seconds_str(self, pid: str) -> str:
         age_s = self._age_seconds(pid)
@@ -286,6 +336,10 @@ class IcuMonitorNode(Node):
         sys.stdout.write('\x1b[2J\x1b[H')
 
     def _refresh_dashboard(self) -> None:
+        # Day11: log state transitions before rendering.
+        for pid in self._patient_ids:
+            self._log_patient_state_if_changed(pid)
+
         rendered = self._render()
 
         # 可能なら画面クリアして上書き

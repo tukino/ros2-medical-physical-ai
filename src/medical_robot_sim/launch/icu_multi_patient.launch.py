@@ -96,6 +96,28 @@ def _launch_setup(context, *args, **kwargs):
 
     scenario = LaunchConfiguration('scenario').perform(context).strip()
 
+    # Day10: Fault Injection params（vital_sensor only）
+    vitals_fault_drop_rate = float(
+        LaunchConfiguration('vitals_fault_drop_rate').perform(context)
+    )
+    vitals_fault_delay_ms = int(LaunchConfiguration('vitals_fault_delay_ms').perform(context))
+    vitals_fault_jitter_ms = int(
+        LaunchConfiguration('vitals_fault_jitter_ms').perform(context)
+    )
+    vitals_fault_pause_after_sec = float(
+        LaunchConfiguration('vitals_fault_pause_after_sec').perform(context)
+    )
+    vitals_fault_pause_duration_sec = float(
+        LaunchConfiguration('vitals_fault_pause_duration_sec').perform(context)
+    )
+    vitals_fault_stop_after_sec = float(
+        LaunchConfiguration('vitals_fault_stop_after_sec').perform(context)
+    )
+
+    observability_verbose_str = LaunchConfiguration('observability_verbose').perform(context)
+    observability_verbose = _parse_bool(observability_verbose_str)
+    vitals_fault_seed = int(LaunchConfiguration('vitals_fault_seed').perform(context))
+
     enabled_rule_ids_str = LaunchConfiguration('enabled_rule_ids').perform(context).strip()
     # CSV → list（空文字はそのまま渡すと空配列扱い）
     enabled_rule_ids = [x.strip() for x in enabled_rule_ids_str.split(',') if x.strip()]
@@ -134,6 +156,14 @@ def _launch_setup(context, *args, **kwargs):
             {'vitals_qos_depth': vitals_qos_depth},
             {'vitals_qos_reliability': vitals_qos_reliability},
             {'vitals_qos_durability': vitals_qos_durability},
+            {'observability_verbose': bool(observability_verbose)},
+            {'vitals_fault_drop_rate': vitals_fault_drop_rate},
+            {'vitals_fault_delay_ms': vitals_fault_delay_ms},
+            {'vitals_fault_jitter_ms': vitals_fault_jitter_ms},
+            {'vitals_fault_pause_after_sec': vitals_fault_pause_after_sec},
+            {'vitals_fault_pause_duration_sec': vitals_fault_pause_duration_sec},
+            {'vitals_fault_stop_after_sec': vitals_fault_stop_after_sec},
+            {'vitals_fault_seed': vitals_fault_seed},
         ]
         if scenario:
             sensor_params.append({'scenario': scenario})
@@ -241,6 +271,55 @@ def generate_launch_description() -> LaunchDescription:
                     "vital_sensor scenario: '' (normal), 'spo2_drop', 'flatline'. "
                     "Applied to all patients."
                 ),
+            ),
+
+            DeclareLaunchArgument(
+                'observability_verbose',
+                default_value='false',
+                description=(
+                    '[Day11] If true, vital_sensor emits verbose-only events '
+                    '(vitals.drop, vitals.enqueue_delayed).'
+                ),
+            ),
+
+            # Day10: Fault Injection (vital_sensor)
+            DeclareLaunchArgument(
+                'vitals_fault_drop_rate',
+                default_value='0.0',
+                description='[Day10] Drop rate for vitals publish: 0.0-1.0 (vital_sensor only).',
+            ),
+            DeclareLaunchArgument(
+                'vitals_fault_delay_ms',
+                default_value='0',
+                description='[Day10] Fixed delay for vitals publish [ms] (vital_sensor only).',
+            ),
+            DeclareLaunchArgument(
+                'vitals_fault_jitter_ms',
+                default_value='0',
+                description=(
+                    '[Day10] Random delay jitter added to delay_ms [ms] '
+                    '(vital_sensor only).'
+                ),
+            ),
+            DeclareLaunchArgument(
+                'vitals_fault_pause_after_sec',
+                default_value='0.0',
+                description='[Day10] Pause vitals publish after N seconds (vital_sensor only).',
+            ),
+            DeclareLaunchArgument(
+                'vitals_fault_pause_duration_sec',
+                default_value='0.0',
+                description='[Day10] Pause duration in seconds (vital_sensor only).',
+            ),
+            DeclareLaunchArgument(
+                'vitals_fault_stop_after_sec',
+                default_value='0.0',
+                description='[Day10] Stop vital_sensor after N seconds (vital_sensor only).',
+            ),
+            DeclareLaunchArgument(
+                'vitals_fault_seed',
+                default_value='0',
+                description='[Day10] RNG seed for fault injection (vital_sensor only).',
             ),
             DeclareLaunchArgument(
                 'enabled_rule_ids',
