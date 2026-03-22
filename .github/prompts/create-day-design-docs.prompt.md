@@ -88,10 +88,16 @@ Must include:
 - Files expected to change
 - Reproduction / validation steps
 - Success criteria
+- Learning path (quickstart + how to read/verify)
 - Relevance to medical / BCI / Physical AI context
 - Connection to the next day
 
-この文書は **what** と **why** の両方を説明してください。
+この文書は **what** と **why** の両方を説明し、さらに「学習者が説明できるようになること」を明示してください。
+
+Learning path の最小要件:
+- 最短コピペ（Quickstart）: まず動かして観測できるコマンド（5分で確認できる）
+- 読み方: どのログ/トピック/ファイルをどの順で見れば原因追跡できるか
+- 任意（学習用）と必須（受け入れ）を分離し、混同しない
 
 ### `specs/{{DAY_NAME}}/spec.md`
 Must include:
@@ -117,6 +123,12 @@ Must include:
 - Commands to run where relevant
 - Expected outputs / conditions
 - No vague language
+
+受け入れコマンド作法（重要）:
+- すべて copy-paste 可能な `bash` ブロックで書く
+- ログは `> /tmp/... 2>&1` に落として `grep -n` で観測できる形を優先
+- `timeout` を使う場合は、起動オーバーヘッドや環境差で取りこぼさない秒数にする（短すぎると誤検知しうる）
+- 環境依存の項目（例: tracing ツール）は optional として「未導入なら N/A」判定できる手順を併記
 
 ---
 
