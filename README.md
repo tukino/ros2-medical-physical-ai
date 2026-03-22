@@ -108,6 +108,63 @@ pgrep -af vital_sensor | grep "__ns:=/patient_02"
 kill <PID>
 ```
 
+## Day10: Fault Injection（vital_sensor）
+
+vitals の drop / delay(+jitter) / pause / stop を **launch 引数だけで再現**できます（既定値は無効=後方互換）。
+
+詳細: [docs/day10_fault_injection.md](docs/day10_fault_injection.md)
+
+### 引数一覧（vital_sensor のみ）
+
+- `vitals_fault_drop_rate`（0.0-1.0）: 確率で publish をスキップ
+- `vitals_fault_delay_ms`（ms）: 固定遅延
+- `vitals_fault_jitter_ms`（ms）: delay に加算されるランダム揺らぎ（0〜jitter）
+- `vitals_fault_pause_after_sec`（sec）: 指定秒後から一時停止開始
+- `vitals_fault_pause_duration_sec`（sec）: 一時停止の継続時間
+- `vitals_fault_stop_after_sec`（sec）: 指定秒後に `vital_sensor` を擬似停止
+- `vitals_fault_seed`（int）: drop/jitter の再現性用 seed
+
+### 例: drop（80%）
+
+```bash
+cd ~/ros2_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 launch medical_robot_sim icu_multi_patient.launch.py \
+  patients:=patient_01 \
+  enable_alerts:=false \
+  vitals_fault_drop_rate:=0.8 \
+  vitals_fault_seed:=42
+```
+
+### 例: pause（5秒後から6秒止めて復帰）
+
+```bash
+cd ~/ros2_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 launch medical_robot_sim icu_multi_patient.launch.py \
+  patients:=patient_01 \
+  enable_alerts:=false \
+  vitals_fault_pause_after_sec:=5.0 \
+  vitals_fault_pause_duration_sec:=6.0
+```
+
+### 例: stop（5秒後に停止）
+
+```bash
+cd ~/ros2_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 launch medical_robot_sim icu_multi_patient.launch.py \
+  patients:=patient_01 \
+  enable_alerts:=false \
+  vitals_fault_stop_after_sec:=5.0
+```
+
 ## 確認コマンド（topic echo / hz）
 （別ターミナルの場合は、先に環境を読み込みます）
 

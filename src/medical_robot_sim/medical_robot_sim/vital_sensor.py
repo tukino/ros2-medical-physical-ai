@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import collections
 import math
 import random
 import sys
@@ -17,6 +18,12 @@ from rclpy.executors import ExternalShutdownException
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 
+from medical_robot_sim.fault_injection import compute_delay_ticks
+from medical_robot_sim.fault_injection import should_drop
+from medical_robot_sim.fault_injection import validate_fault_params
+from medical_robot_sim.observability import format_event
+from medical_robot_sim.observability import format_vitals_drop_event
+from medical_robot_sim.observability import format_vitals_enqueue_delayed_event
 from medical_robot_sim.qos_profiles import build_qos_profile
 
 
@@ -25,6 +32,10 @@ class VitalSensorNode(Node):
 
     def __init__(self):
         super().__init__('vital_sensor')
+
+        # Day11: Observability params
+        self.declare_parameter('observability_verbose', False)
+        self._observability_verbose = bool(self.get_parameter('observability_verbose').value)
 
         # Day8: QoS params（launch から上書き可能）
         self.declare_parameter('vitals_qos_depth', 10)
@@ -62,6 +73,54 @@ class VitalSensorNode(Node):
         if publish_rate_hz <= 0.0:
             raise ValueError("Parameter 'publish_rate_hz' must be > 0")
 
+        # Day10: Fault Injection params（既定は無効 = 後方互換）
+        self.declare_parameter('vitals_fault_drop_rate', 0.0)
+        self.declare_parameter('vitals_fault_delay_ms', 0)
+        self.declare_parameter('vitals_fault_jitter_ms', 0)
+        self.declare_parameter('vitals_fault_pause_after_sec', 0.0)
+        self.declare_parameter('vitals_fault_pause_duration_sec', 0.0)
+        self.declare_parameter('vitals_fault_stop_after_sec', 0.0)
+        self.declare_parameter('vitals_fault_seed', 0)
+
+        fault_drop_rate = float(self.get_parameter('vitals_fault_drop_rate').value)
+        fault_delay_ms = int(self.get_parameter('vitals_fault_delay_ms').value)
+        fault_jitter_ms = int(self.get_parameter('vitals_fault_jitter_ms').value)
+        fault_pause_after_sec = float(
+            self.get_parameter('vitals_fault_pause_after_sec').value
+        )
+        fault_pause_duration_sec = float(
+            self.get_parameter('vitals_fault_pause_duration_sec').value
+        )
+        fault_stop_after_sec = float(self.get_parameter('vitals_fault_stop_after_sec').value)
+        fault_seed = int(self.get_parameter('vitals_fault_seed').value)
+
+        try:
+            validate_fault_params(
+                drop_rate=fault_drop_rate,
+                delay_ms=fault_delay_ms,
+                jitter_ms=fault_jitter_ms,
+                pause_after_sec=fault_pause_after_sec,
+                pause_duration_sec=fault_pause_duration_sec,
+                stop_after_sec=fault_stop_after_sec,
+                publish_rate_hz=publish_rate_hz,
+            )
+        except ValueError as exc:
+            self.get_logger().error(f"[Day10] Invalid fault params: {exc}")
+            raise SystemExit(2)
+
+        self._fault_drop_rate = fault_drop_rate
+        self._fault_delay_ms = fault_delay_ms
+        self._fault_jitter_ms = fault_jitter_ms
+        self._fault_pause_after_sec = fault_pause_after_sec
+        self._fault_pause_duration_sec = fault_pause_duration_sec
+        self._fault_stop_after_sec = fault_stop_after_sec
+        self._fault_rng = random.Random(fault_seed)
+
+        # due_tick（サンプル番号）で publish を遅延させるキュー（順序維持のため due_tick は単調増加にする）
+        self._delayed_queue: collections.deque[tuple[int, VitalSigns]] = collections.deque()
+        self._last_due_tick = 0
+        self._is_paused = False
+
         # シナリオ（デモ/再現性向け）
         # - '' / 'normal': 通常のランダム変動
         # - 'spo2_drop': 開始数秒後からSpO2を段階的に下げ、roc.spo2_drop を確実に誘発
@@ -87,7 +146,7 @@ class VitalSensorNode(Node):
         # レートに応じてデータを送信
         self.timer = self.create_timer(1.0 / publish_rate_hz, self.publish_vital_data)
 
-        # 測定カウンター
+        # 測定カウンター（= サンプル tick）
         self.measurement_count = 0
 
         self.get_logger().info('バイタルセンサーノード（カスタムメッセージ版）を起動しました')
@@ -98,6 +157,32 @@ class VitalSensorNode(Node):
             '[Day8] vitals_qos='
             f"KEEP_LAST depth={vitals_qos_depth}, reliability={vitals_qos_reliability}, "
             f"durability={vitals_qos_durability}"
+        )
+        self.get_logger().info(
+            '[Day10] fault='
+            f"drop_rate={fault_drop_rate}, delay_ms={fault_delay_ms}, "
+            f"jitter_ms={fault_jitter_ms}, "
+            f"pause_after_sec={fault_pause_after_sec}, "
+            f"pause_duration_sec={fault_pause_duration_sec}, "
+            f"stop_after_sec={fault_stop_after_sec}, seed={fault_seed}"
+        )
+
+        # Day11: Emit fault configuration as a machine-grepable event.
+        self.get_logger().info(
+            format_event(
+                'vitals.fault_config',
+                delay_ms=fault_delay_ms,
+                drop_rate=fault_drop_rate,
+                jitter_ms=fault_jitter_ms,
+                node=self.get_name(),
+                ns=self.get_namespace(),
+                pause_after_sec=fault_pause_after_sec,
+                pause_duration_sec=fault_pause_duration_sec,
+                publish_rate_hz=publish_rate_hz,
+                seed=fault_seed,
+                stop_after_sec=fault_stop_after_sec,
+                verbose=self._observability_verbose,
+            )
         )
 
     def _compute_oxygen_saturation(self, base_oxygen_saturation: int) -> int:
@@ -167,18 +252,139 @@ class VitalSensorNode(Node):
 
     def publish_vital_data(self):
         """バイタルサインデータをパブリッシュ."""
-        msg = self.generate_realistic_vitals()
 
-        self.publisher_.publish(msg)
+        tick = int(self.measurement_count)
+        elapsed_sec = tick / float(self.publish_rate_hz)
 
-        # ログ出力
-        self.get_logger().info(
-            f'送信 #{self.measurement_count}: '
-            f'心拍数={msg.heart_rate}bpm, '
-            f'血圧={msg.blood_pressure_systolic}/{msg.blood_pressure_diastolic}mmHg, '
-            f'体温={msg.body_temperature:.1f}°C, '
-            f'SpO2={msg.oxygen_saturation}%'
-        )
+        # Day10: stop injection
+        if self._fault_stop_after_sec > 0.0 and elapsed_sec >= self._fault_stop_after_sec:
+            self.get_logger().warn(
+                f"[Day10] vitals_fault_stop_after_sec reached ({self._fault_stop_after_sec}); "
+                'shutting down...'
+            )
+
+            self.get_logger().info(
+                format_event(
+                    'vitals.stop_trigger',
+                    elapsed_sec=elapsed_sec,
+                    node=self.get_name(),
+                    ns=self.get_namespace(),
+                    tick=tick,
+                )
+            )
+            try:
+                if rclpy.ok():
+                    rclpy.shutdown()
+            except Exception:
+                pass
+            return
+
+        # Day10: pause injection
+        paused = False
+        if self._fault_pause_after_sec > 0.0 and self._fault_pause_duration_sec > 0.0:
+            start = self._fault_pause_after_sec
+            end = self._fault_pause_after_sec + self._fault_pause_duration_sec
+            paused = start <= elapsed_sec < end
+
+        if paused and not self._is_paused:
+            self.get_logger().warn('[Day10] entering pause window (publish halted)')
+
+            self.get_logger().info(
+                format_event(
+                    'vitals.pause_enter',
+                    elapsed_sec=elapsed_sec,
+                    node=self.get_name(),
+                    ns=self.get_namespace(),
+                    tick=tick,
+                )
+            )
+        if (not paused) and self._is_paused:
+            self.get_logger().warn('[Day10] leaving pause window (publish resumed)')
+
+            self.get_logger().info(
+                format_event(
+                    'vitals.pause_exit',
+                    elapsed_sec=elapsed_sec,
+                    node=self.get_name(),
+                    ns=self.get_namespace(),
+                    tick=tick,
+                )
+            )
+        self._is_paused = bool(paused)
+
+        if self._is_paused:
+            # publish/flush せずに tick だけ進める
+            self.measurement_count += 1
+            return
+
+        # Day10: drop injection
+        dropped = should_drop(self._fault_drop_rate, self._fault_rng)
+        if dropped and self._observability_verbose:
+            try:
+                self.get_logger().info(
+                    format_vitals_drop_event(
+                        node=str(self.get_name()),
+                        ns=str(self.get_namespace()),
+                        tick=int(tick),
+                        elapsed_sec=float(elapsed_sec),
+                        drop_rate=float(self._fault_drop_rate),
+                    )
+                )
+            except Exception:
+                pass
+
+        if not dropped:
+            msg = self.generate_realistic_vitals()
+            delay_ticks = compute_delay_ticks(
+                self._fault_delay_ms,
+                self._fault_jitter_ms,
+                self.publish_rate_hz,
+                self._fault_rng,
+            )
+            due_tick = tick + int(delay_ticks)
+
+            clamped = False
+
+            # 順序を守る（due_tick が逆転しないように丸める）
+            if due_tick < self._last_due_tick:
+                due_tick = self._last_due_tick
+                clamped = True
+            self._last_due_tick = due_tick
+
+            self._delayed_queue.append((due_tick, msg))
+
+            if self._observability_verbose and int(delay_ticks) > 0:
+                try:
+                    self.get_logger().info(
+                        format_vitals_enqueue_delayed_event(
+                            node=str(self.get_name()),
+                            ns=str(self.get_namespace()),
+                            tick=int(tick),
+                            elapsed_sec=float(elapsed_sec),
+                            delay_ms=int(self._fault_delay_ms),
+                            jitter_ms=int(self._fault_jitter_ms),
+                            delay_ticks=int(delay_ticks),
+                            due_tick=int(due_tick),
+                            queue_len=int(len(self._delayed_queue)),
+                            clamped=bool(clamped),
+                        )
+                    )
+                except Exception:
+                    pass
+
+        # due_tick 到達済みのものを publish
+        while self._delayed_queue and self._delayed_queue[0][0] <= tick:
+            _, out_msg = self._delayed_queue.popleft()
+            self.publisher_.publish(out_msg)
+
+            # ログ出力
+            self.get_logger().info(
+                f'送信 #{out_msg.measurement_id}: '
+                f'心拍数={out_msg.heart_rate}bpm, '
+                f'血圧={out_msg.blood_pressure_systolic}/{out_msg.blood_pressure_diastolic}mmHg, '
+                f'体温={out_msg.body_temperature:.1f}°C, '
+                f'SpO2={out_msg.oxygen_saturation}%'
+            )
 
         self.measurement_count += 1
 

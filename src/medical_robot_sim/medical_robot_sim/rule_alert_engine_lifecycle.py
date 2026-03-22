@@ -46,6 +46,7 @@ from medical_robot_sim.rule_config_loader import get_string_list
 from medical_robot_sim.rule_config_loader import load_rule_config
 from medical_robot_sim.rule_config_loader import resolve_rules_path
 from medical_robot_sim.qos_profiles import build_qos_profile
+from medical_robot_sim.rule_alert_engine import format_alert_emit_event
 
 
 def _now_s(node: LifecycleNode) -> float:
@@ -535,6 +536,18 @@ class RuleAlertEngineLifecycleNode(LifecycleNode):
         if pub is None:
             return
         pub.publish(alert_msg)
+
+        try:
+            self.get_logger().info(
+                format_alert_emit_event(
+                    alert_msg,
+                    node=str(self.get_name()),
+                    ns=str(self.get_namespace()),
+                )
+            )
+        except Exception:
+            pass
+
         self._last_emit_ts[key] = now_s
 
     def _build_alert(
