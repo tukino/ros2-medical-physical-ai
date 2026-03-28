@@ -46,6 +46,7 @@ setup(
     entry_points={
         'console_scripts': [
             'vital_sensor = medical_robot_sim.vital_sensor:main',
+            'hw_vital_sensor = medical_robot_sim.hw_vital_sensor:main',
             'medical_monitor = medical_robot_sim.medical_monitor:main',
             'icu_monitor = medical_robot_sim.icu_monitor:main',
             'rule_alert_engine = medical_robot_sim.rule_alert_engine:main',

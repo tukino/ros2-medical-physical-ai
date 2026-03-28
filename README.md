@@ -40,6 +40,8 @@ Day3 の shutdown / clean exit の学びは [docs/day3_shutdown_clean_exit.md](d
 - Day11 Logging/Tracing: [docs/day11_logging_tracing.md](docs/day11_logging_tracing.md)
 - Day12 rosbag再現性: [docs/day12_rosbag_reproducibility.md](docs/day12_rosbag_reproducibility.md)
   - 受け入れ（コピペ手順）: [specs/day12_rosbag_reproducibility/acceptance.md](specs/day12_rosbag_reproducibility/acceptance.md)
+- Day13 実センサー接続（I2C/SPI）: [docs/day13_real_sensor_i2c_spi.md](docs/day13_real_sensor_i2c_spi.md)
+  - 受け入れ（コピペ手順）: [specs/day13_real_sensor_i2c_spi/acceptance.md](specs/day13_real_sensor_i2c_spi/acceptance.md)
 - Day6 flatline: [docs/day6_flatline.md](docs/day6_flatline.md)
 - Day7 ルール外部化（YAML）: [docs/day7_rule_externalization.md](docs/day7_rule_externalization.md)
 - Day8 QoS: [docs/day8_qos.md](docs/day8_qos.md)
