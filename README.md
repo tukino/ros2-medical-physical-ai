@@ -30,6 +30,22 @@ vital_sensor --> icu_monitor : VitalSigns.msg
 
 Day3 の shutdown / clean exit の学びは [docs/day3_shutdown_clean_exit.md](docs/day3_shutdown_clean_exit.md) にまとめています。
 
+## ドキュメント（Roadmap / 詳細）
+
+このリポジトリは「Dayごとの設計メモ」を docs/ 配下に蓄積していきます。README は最短で動かすための入口に留め、詳細は docs を参照してください。
+
+- 全体計画（Master Plan）: [docs/PLAN.md](docs/PLAN.md)
+- Day9 Lifecycle: [docs/day9_lifecycle.md](docs/day9_lifecycle.md)
+- Day10 Fault Injection: [docs/day10_fault_injection.md](docs/day10_fault_injection.md)
+- Day11 Logging/Tracing: [docs/day11_logging_tracing.md](docs/day11_logging_tracing.md)
+- Day12 rosbag再現性: [docs/day12_rosbag_reproducibility.md](docs/day12_rosbag_reproducibility.md)
+  - 受け入れ（コピペ手順）: [specs/day12_rosbag_reproducibility/acceptance.md](specs/day12_rosbag_reproducibility/acceptance.md)
+- Day13 実センサー接続（I2C/SPI）: [docs/day13_real_sensor_i2c_spi.md](docs/day13_real_sensor_i2c_spi.md)
+  - 受け入れ（コピペ手順）: [specs/day13_real_sensor_i2c_spi/acceptance.md](specs/day13_real_sensor_i2c_spi/acceptance.md)
+- Day6 flatline: [docs/day6_flatline.md](docs/day6_flatline.md)
+- Day7 ルール外部化（YAML）: [docs/day7_rule_externalization.md](docs/day7_rule_externalization.md)
+- Day8 QoS: [docs/day8_qos.md](docs/day8_qos.md)
+
 ## 前提（ROS 2 Humble）
 - ROS 2 Humble がインストール済み
 - `colcon` が利用できる
@@ -108,62 +124,11 @@ pgrep -af vital_sensor | grep "__ns:=/patient_02"
 kill <PID>
 ```
 
-## Day10: Fault Injection（vital_sensor）
+## 故障注入（Fault injection）
 
 vitals の drop / delay(+jitter) / pause / stop を **launch 引数だけで再現**できます（既定値は無効=後方互換）。
 
-詳細: [docs/day10_fault_injection.md](docs/day10_fault_injection.md)
-
-### 引数一覧（vital_sensor のみ）
-
-- `vitals_fault_drop_rate`（0.0-1.0）: 確率で publish をスキップ
-- `vitals_fault_delay_ms`（ms）: 固定遅延
-- `vitals_fault_jitter_ms`（ms）: delay に加算されるランダム揺らぎ（0〜jitter）
-- `vitals_fault_pause_after_sec`（sec）: 指定秒後から一時停止開始
-- `vitals_fault_pause_duration_sec`（sec）: 一時停止の継続時間
-- `vitals_fault_stop_after_sec`（sec）: 指定秒後に `vital_sensor` を擬似停止
-- `vitals_fault_seed`（int）: drop/jitter の再現性用 seed
-
-### 例: drop（80%）
-
-```bash
-cd ~/ros2_ws
-source /opt/ros/humble/setup.bash
-source install/setup.bash
-
-ros2 launch medical_robot_sim icu_multi_patient.launch.py \
-  patients:=patient_01 \
-  enable_alerts:=false \
-  vitals_fault_drop_rate:=0.8 \
-  vitals_fault_seed:=42
-```
-
-### 例: pause（5秒後から6秒止めて復帰）
-
-```bash
-cd ~/ros2_ws
-source /opt/ros/humble/setup.bash
-source install/setup.bash
-
-ros2 launch medical_robot_sim icu_multi_patient.launch.py \
-  patients:=patient_01 \
-  enable_alerts:=false \
-  vitals_fault_pause_after_sec:=5.0 \
-  vitals_fault_pause_duration_sec:=6.0
-```
-
-### 例: stop（5秒後に停止）
-
-```bash
-cd ~/ros2_ws
-source /opt/ros/humble/setup.bash
-source install/setup.bash
-
-ros2 launch medical_robot_sim icu_multi_patient.launch.py \
-  patients:=patient_01 \
-  enable_alerts:=false \
-  vitals_fault_stop_after_sec:=5.0
-```
+- 詳細（引数一覧・例）: [docs/day10_fault_injection.md](docs/day10_fault_injection.md)
 
 ## 確認コマンド（topic echo / hz）
 （別ターミナルの場合は、先に環境を読み込みます）
@@ -225,6 +190,11 @@ Messages:
 ## rosbag 記録/再生
 ICU の検証用に、患者ごとの `VitalSigns` を rosbag に記録・再生できます。
 
+「記録した入力（vitals）を replay して alerts 生成まで検証する」手順は Day12 にまとめています。
+
+- 設計メモ: [docs/day12_rosbag_reproducibility.md](docs/day12_rosbag_reproducibility.md)
+- 受け入れ（コピペ）: [specs/day12_rosbag_reproducibility/acceptance.md](specs/day12_rosbag_reproducibility/acceptance.md)
+
 （別ターミナルの場合は、先に環境を読み込みます）
 ```bash
 source /opt/ros/humble/setup.bash
@@ -263,155 +233,13 @@ sudo apt install -y ros-humble-rqt-graph
 rqt_graph
 ```
 
-## Day6: flatline 検知（temporal_stability）
+## ルール・QoS 等の設計メモ
 
-HR・SpO2 が一定時間にわたりほぼ変化しない状態（センサ固着 / 重篤な安定化）を `temporal_stability` ルールで検知します。
+README では詳細を重複させず、各トピックの設計メモにリンクします。
 
-- `flatline.hr` : 末尾 8 サンプルの HR 変動幅（max−min）≤ 1.0 bpm
-- `flatline.spo2` : 末尾 8 サンプルの SpO2 変動幅 ≤ 1.0 %
-
-詳細は [docs/day6_flatline.md](docs/day6_flatline.md) を参照。
-
-### 起動
-
-```bash
-cd ~/ros2_ws
-source /opt/ros/humble/setup.bash
-source ~/ros2_ws/install/setup.bash
-
-ros2 launch medical_robot_sim icu_multi_patient.launch.py \
-  patients:=patient_01,patient_02 \
-  enable_alerts:=true \
-  scenario:=flatline \
-  enabled_rule_ids:=flatline.hr,flatline.spo2
-```
-
-### 確認（別ターミナル）
-
-```bash
-source /opt/ros/humble/setup.bash
-source ~/ros2_ws/install/setup.bash
-
-timeout 45s ros2 topic echo /patient_01/alerts
-```
-
-### 成功条件
-
-- `rule_id: flatline.hr` または `flatline.spo2` が出力される
-- `kind: temporal_stability`
-- `window_sec: 8`
-
-期待出力例（抜粋）:
-
-```text
-rule_id: flatline.hr
-kind: temporal_stability
-priority: YELLOW
-window_sec: 8
-field: heart_rate
-delta: 0.0
-```
-
-> **Note (WSL2)**: タイマー制約で発火まで最大 40 秒かかる場合は、起動コマンドに `flatline_history_size:=3` を追加してください（発火までのサンプル数を減らします）。
-
----
-
-## Day7: アラートルール設定の外部化
-
-アラートルールのしきい値を YAML ファイルで管理できるようになりました。
-コードを変更せずとも、感度調整やルール有効/無効の切り替えが可能です。
-
-詳細は [docs/day7_rule_externalization.md](docs/day7_rule_externalization.md) を参照。
-
-### 設定ファイル
-
-```
-src/medical_robot_sim/config/alert_rules.yaml
-```
-
-```yaml
-rule_config:
-  spo2_drop_threshold: 4.0       # roc.spo2_drop 発火閾値
-  hr_jump_threshold: 20.0        # roc.hr_jump 発火閾値
-  flatline_history_size: 8       # flatline 判定サンプル数
-  flatline_hr_epsilon: 1.0       # flatline HR 閾値 [bpm]
-  flatline_spo2_epsilon: 1.0     # flatline SpO2 閾値 [%]
-  enabled_rule_ids: []           # 空 = 全ルール有効
-```
-
-### 起動（YAML 既定パス）
-
-rules_path 未指定でも、パッケージ内の `config/alert_rules.yaml` が読み込まれます。
-
-```bash
-cd ~/ros2_ws
-source /opt/ros/humble/setup.bash
-source ~/ros2_ws/install/setup.bash
-
-ros2 launch medical_robot_sim icu_multi_patient.launch.py \
-  enable_alerts:=true
-```
-
-### enabled_rule_ids の切り替え例
-
-flatline.hr だけを有効化:
-
-```bash
-ros2 launch medical_robot_sim icu_multi_patient.launch.py \
-  enable_alerts:=true \
-  scenario:=flatline \
-  enabled_rule_ids:=flatline.hr
-```
-
-flatline.spo2 だけを有効化:
-
-```bash
-ros2 launch medical_robot_sim icu_multi_patient.launch.py \
-  enable_alerts:=true \
-  scenario:=flatline \
-  enabled_rule_ids:=flatline.spo2
-```
-
-### 成功条件
-
-- `rules_path` 未指定でも YAML が読み込まれる
-- `/patient_01/alerts` に `flatline.hr` または `flatline.spo2` が出力される
-- Day6 の flatline 検知が維持される
-
-### 優先順位
-
-```
-ROS param (launch arg) > alert_rules.yaml > コード内デフォルト
-```
-
-従来の launch 引数（`flatline_history_size:=3` など）は引き続き動作し、YAML より優先されます。
-
----
-
-## Day8: QoS設計（vitals/alerts）
-
-vitals（`/<patient>/patient_vitals`）と alerts（`/<patient>/alerts`）の QoS を暗黙デフォルトにせず、明示して観測・切替できるようにしました。
-
-詳細は [docs/day8_qos.md](docs/day8_qos.md) を参照。
-
-### QoS の観測（verbose）
-
-```bash
-source /opt/ros/humble/setup.bash
-source ~/ros2_ws/install/setup.bash
-
-ros2 topic info --verbose /patient_01/patient_vitals
-ros2 topic info --verbose /patient_01/alerts
-```
-
-### launch 引数で QoS を切り替える例
-
-```bash
-ros2 launch medical_robot_sim icu_multi_patient.launch.py \
-  patients:=patient_01 \
-  enable_alerts:=true \
-  alerts_qos_durability:=transient_local
-```
+- flatline 検知（temporal_stability）: [docs/day6_flatline.md](docs/day6_flatline.md)
+- ルール外部化（YAML）: [docs/day7_rule_externalization.md](docs/day7_rule_externalization.md)
+- QoS 設計（vitals/alerts）: [docs/day8_qos.md](docs/day8_qos.md)
 
 ---
 
