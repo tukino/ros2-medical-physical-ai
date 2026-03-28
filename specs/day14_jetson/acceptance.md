@@ -97,6 +97,7 @@ colcon test-result --verbose
   export ROS2CLI_NO_DAEMON=1
 
   rm -f /tmp/day14_edge_pipeline.log
+  rm -f /tmp/day14_vitals_once.txt
   echo "INFO: launching icu_edge (mock normal)"
   ros2 launch medical_robot_sim icu_edge.launch.py \
     patient:=patient_01 \
@@ -108,19 +109,53 @@ colcon test-result --verbose
 
   sleep 3
 
-  rm -f /tmp/day14_vitals_once.txt
   echo "INFO: waiting for one vitals message (timeout=10s)"
+  set +e
   timeout 10s ros2 topic echo /patient_01/patient_vitals --once \
     --qos-history keep_last --qos-depth 10 \
     --qos-reliability reliable --qos-durability volatile \
     > /tmp/day14_vitals_once.txt 2>&1
+  RC=$?
+  set -e
+  echo "INFO: vitals echo rc=$RC"
 
   echo "INFO: stopping launch (pid=${LAUNCH_PID})"
   kill -INT "${LAUNCH_PID}" 2>/dev/null || true
+  DEADLINE=$((SECONDS+8))
+  while kill -0 "${LAUNCH_PID}" 2>/dev/null; do
+    if [ "${SECONDS}" -ge "${DEADLINE}" ]; then
+      break
+    fi
+    sleep 1
+  done
+  if kill -0 "${LAUNCH_PID}" 2>/dev/null; then
+    echo "WARN: launch still running; sending SIGTERM" >&2
+    kill -TERM "${LAUNCH_PID}" 2>/dev/null || true
+    sleep 2
+  fi
+  if kill -0 "${LAUNCH_PID}" 2>/dev/null; then
+    echo "WARN: launch still running; sending SIGKILL" >&2
+    kill -KILL "${LAUNCH_PID}" 2>/dev/null || true
+  fi
   wait "${LAUNCH_PID}" 2>/dev/null || true
 
-  grep -n "patient_id" /tmp/day14_vitals_once.txt
-  echo "OK: vitals published"
+  if [ "$RC" -ne 0 ]; then
+    echo "ERROR: vitals echo failed rc=$RC" >&2
+    echo "--- /tmp/day14_vitals_once.txt ---" >&2
+    cat /tmp/day14_vitals_once.txt >&2 || true
+    echo "--- /tmp/day14_edge_pipeline.log (tail) ---" >&2
+    tail -n 120 /tmp/day14_edge_pipeline.log >&2 || true
+    exit 1
+  fi
+
+  if grep -n "patient_id" /tmp/day14_vitals_once.txt; then
+    echo "OK: vitals published"
+  else
+    echo "ERROR: vitals output missing patient_id" >&2
+    echo "--- /tmp/day14_vitals_once.txt ---" >&2
+    cat /tmp/day14_vitals_once.txt >&2 || true
+    exit 1
+  fi
 )
 ```
 
@@ -138,6 +173,7 @@ colcon test-result --verbose
   export ROS2CLI_NO_DAEMON=1
 
   rm -f /tmp/day14_edge_alerts_pipeline.log
+  rm -f /tmp/day14_alerts_once.txt
   echo "INFO: launching icu_edge (mock spo2_drop, alerts enabled)"
   ros2 launch medical_robot_sim icu_edge.launch.py \
     patient:=patient_01 \
@@ -149,19 +185,53 @@ colcon test-result --verbose
 
   sleep 3
 
-  rm -f /tmp/day14_alerts_once.txt
   echo "INFO: waiting for one alert message (timeout=25s)"
+  set +e
   timeout 25s ros2 topic echo /patient_01/alerts --once \
     --qos-history keep_last --qos-depth 10 \
     --qos-reliability reliable --qos-durability volatile \
     > /tmp/day14_alerts_once.txt 2>&1
+  RC=$?
+  set -e
+  echo "INFO: alerts echo rc=$RC"
 
   echo "INFO: stopping launch (pid=${LAUNCH_PID})"
   kill -INT "${LAUNCH_PID}" 2>/dev/null || true
+  DEADLINE=$((SECONDS+10))
+  while kill -0 "${LAUNCH_PID}" 2>/dev/null; do
+    if [ "${SECONDS}" -ge "${DEADLINE}" ]; then
+      break
+    fi
+    sleep 1
+  done
+  if kill -0 "${LAUNCH_PID}" 2>/dev/null; then
+    echo "WARN: launch still running; sending SIGTERM" >&2
+    kill -TERM "${LAUNCH_PID}" 2>/dev/null || true
+    sleep 2
+  fi
+  if kill -0 "${LAUNCH_PID}" 2>/dev/null; then
+    echo "WARN: launch still running; sending SIGKILL" >&2
+    kill -KILL "${LAUNCH_PID}" 2>/dev/null || true
+  fi
   wait "${LAUNCH_PID}" 2>/dev/null || true
 
-  grep -n "rule_id" /tmp/day14_alerts_once.txt
-  echo "OK: alerts generated"
+  if [ "$RC" -ne 0 ]; then
+    echo "ERROR: alerts echo failed rc=$RC" >&2
+    echo "--- /tmp/day14_alerts_once.txt ---" >&2
+    cat /tmp/day14_alerts_once.txt >&2 || true
+    echo "--- /tmp/day14_edge_alerts_pipeline.log (tail) ---" >&2
+    tail -n 160 /tmp/day14_edge_alerts_pipeline.log >&2 || true
+    exit 1
+  fi
+
+  if grep -n "rule_id" /tmp/day14_alerts_once.txt; then
+    echo "OK: alerts generated"
+  else
+    echo "ERROR: alerts output missing rule_id" >&2
+    echo "--- /tmp/day14_alerts_once.txt ---" >&2
+    cat /tmp/day14_alerts_once.txt >&2 || true
+    exit 1
+  fi
 )
 ```
 
