@@ -60,7 +60,7 @@ EEG/BCI の入力を multi-patient パイプラインへ追加し、次を満た
 
 機能:
 - 患者ごとに last_seen と last_measurement_id を保持する
-- FRESH/STALE/NO_DATA を算出し、状態遷移のみをイベントログで出す
+- FRESH/STALE/NO DATA を算出し、状態遷移のみをイベントログで出す
 
 状態分類は pure function を切り出して pytest でテスト可能にする（Day11 の `classify_patient_state` と同様）。
 
@@ -99,7 +99,7 @@ EEG/BCI の入力を multi-patient パイプラインへ追加し、次を満た
 pytest（`src/medical_robot_sim/test/`）で純粋関数と mock を中心に最小テストを追加する。
 
 - `MockBCIDevice` が seed 固定で deterministic に系列を返す
-- state 分類（age_sec → FRESH/STALE/NO_DATA）の境界値
+- state 分類（age_sec → FRESH/STALE/NO DATA）の境界値
 
 ## Affected files
 
@@ -107,6 +107,7 @@ pytest（`src/medical_robot_sim/test/`）で純粋関数と mock を中心に最
 - `src/medical_interfaces/CMakeLists.txt`（interfaces 追加）
 
 - `src/medical_robot_sim/medical_robot_sim/bci_io.py`（新規）
+- `src/medical_robot_sim/medical_robot_sim/bci_patient_state.py`（新規）
 - `src/medical_robot_sim/medical_robot_sim/bci_sensor.py`（新規）
 - `src/medical_robot_sim/medical_robot_sim/bci_monitor.py`（新規）
 - `src/medical_robot_sim/launch/icu_bci.launch.py`（新規）
