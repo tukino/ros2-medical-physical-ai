@@ -49,6 +49,8 @@ setup(
             'hw_vital_sensor = medical_robot_sim.hw_vital_sensor:main',
             'medical_monitor = medical_robot_sim.medical_monitor:main',
             'icu_monitor = medical_robot_sim.icu_monitor:main',
+            'bci_sensor = medical_robot_sim.bci_sensor:main',
+            'bci_monitor = medical_robot_sim.bci_monitor:main',
             'rule_alert_engine = medical_robot_sim.rule_alert_engine:main',
             'rule_alert_engine_lifecycle = medical_robot_sim.rule_alert_engine_lifecycle:main',
         ],

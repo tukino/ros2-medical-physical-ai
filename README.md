@@ -44,6 +44,8 @@ Day3 の shutdown / clean exit の学びは [docs/day3_shutdown_clean_exit.md](d
   - 受け入れ（コピペ手順）: [specs/day13_real_sensor_i2c_spi/acceptance.md](specs/day13_real_sensor_i2c_spi/acceptance.md)
 - Day14 Edgeデバイス（Jetson）: [docs/day14_jetson.md](docs/day14_jetson.md)
   - 受け入れ（コピペ手順）: [specs/day14_jetson/acceptance.md](specs/day14_jetson/acceptance.md)
+- Day15 EEG/BCI入力: [docs/day15_eeg_bci_input.md](docs/day15_eeg_bci_input.md)
+  - 受け入れ（コピペ手順）: [specs/day15_eeg_bci_input/acceptance.md](specs/day15_eeg_bci_input/acceptance.md)
 - Day6 flatline: [docs/day6_flatline.md](docs/day6_flatline.md)
 - Day7 ルール外部化（YAML）: [docs/day7_rule_externalization.md](docs/day7_rule_externalization.md)
 - Day8 QoS: [docs/day8_qos.md](docs/day8_qos.md)
@@ -92,6 +94,14 @@ source ~/ros2_ws/install/setup.bash
 cd ~/ros2_ws
 ros2 launch medical_robot_sim icu_multi_patient.launch.py
 ```
+
+### BCI入力（Day15 / 単一患者）
+```bash
+cd ~/ros2_ws
+ros2 launch medical_robot_sim icu_bci.launch.py patient:=patient_01 driver:=mock
+```
+
+引数や受け入れ（コピペ手順）は Day15 にまとめています: [docs/day15_eeg_bci_input.md](docs/day15_eeg_bci_input.md)
 
 ### launch 引数 `patients:=...` の説明
 `patients` は **CSV（カンマ区切り）**で、各要素が患者 namespace になります。
