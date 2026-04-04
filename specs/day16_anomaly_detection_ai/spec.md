@@ -60,25 +60,27 @@ Day11 形式の 1 行ログを必須にする。
 
 - `enable_advisories`（default `false`）
 - `advisories_qos_*`
-- （任意）`advisory_window_sec`, `advisory_window_size` 等
+- `advisories_window_sec`, `advisories_window_size`
+- `advisories_spo2_drop_threshold`, `advisories_hr_jump_threshold`
 
 `enable_advisories:=true` の場合のみ、患者ごとに `advisory_publisher` を起動する。
 
 ### Testing
 
-pytest（`src/medical_robot_sim/test/`）で `anomaly_detector` のユニットテストを追加する。
+pytest（`src/medical_robot_sim/test/`）で Day16 追加コードのユニットテストを追加する。
 
-- window 未満はイベント無し
-- window 到達で edge-trigger（初回のみ）
-- しきい値境界（drop/jump）
+- `anomaly_event_to_advisory_alert()` が `kind=advisory` で `Alert.msg` を生成できる
+- `rule_id` が安定ID（`ai.*`）へ変換される
+
+（注）`anomaly_detector.FlatlineDetector` の境界値テストは既存の `test_flatline_detector.py` が担う。
 
 ## Affected files
 
-- `src/medical_robot_sim/medical_robot_sim/anomaly_detector.py`
+- `src/medical_robot_sim/medical_robot_sim/advisory_alerts.py`（新規）
 - `src/medical_robot_sim/medical_robot_sim/advisory_publisher.py`（新規）
 - `src/medical_robot_sim/launch/icu_multi_patient.launch.py`
 - `src/medical_robot_sim/setup.py`
-- `src/medical_robot_sim/test/test_anomaly_detector.py`（新規）
+- `src/medical_robot_sim/test/test_day16_advisory_alerts.py`（新規）
 
 - `docs/day16_anomaly_detection_ai.md`
 - `specs/day16_anomaly_detection_ai/spec.md`

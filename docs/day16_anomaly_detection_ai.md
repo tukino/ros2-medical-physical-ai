@@ -123,11 +123,11 @@ pytest（`src/medical_robot_sim/test/`）で、少なくとも以下をカバー
 
 ## Files expected to change
 
-- `src/medical_robot_sim/medical_robot_sim/anomaly_detector.py`（窓/しきい値外部化、テスト容易性の改善）
+- `src/medical_robot_sim/medical_robot_sim/advisory_alerts.py`（新規: AnomalyEvent→Alert 変換の純粋関数）
 - `src/medical_robot_sim/medical_robot_sim/advisory_publisher.py`（新規）
 - `src/medical_robot_sim/launch/icu_multi_patient.launch.py`（enable_advisories 等の追加）
 - `src/medical_robot_sim/setup.py`（console_scripts 追加）
-- `src/medical_robot_sim/test/test_anomaly_detector.py`（新規）
+- `src/medical_robot_sim/test/test_day16_advisory_alerts.py`（新規）
 
 - 本ファイル: `docs/day16_anomaly_detection_ai.md`
 - `specs/day16_anomaly_detection_ai/spec.md`
@@ -152,6 +152,7 @@ timeout -s INT 25s ros2 launch medical_robot_sim icu_multi_patient.launch.py \
   patients:=patient_01 \
   enable_alerts:=false \
   enable_advisories:=true \
+  advisories_window_size:=4 \
   scenario:=flatline \
   > /tmp/day16_quick.log 2>&1 || true
 

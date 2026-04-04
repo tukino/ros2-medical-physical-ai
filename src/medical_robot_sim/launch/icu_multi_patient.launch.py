@@ -31,6 +31,11 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
+from medical_robot_sim.anomaly_detector import DEFAULT_HR_JUMP_THRESHOLD
+from medical_robot_sim.anomaly_detector import DEFAULT_SPO2_DROP_THRESHOLD
+from medical_robot_sim.anomaly_detector import DEFAULT_WINDOW_SEC
+from medical_robot_sim.anomaly_detector import DEFAULT_WINDOW_SIZE
+
 
 def _parse_patients_csv(value: str) -> List[str]:
     # CSV を split し、空要素と前後空白を除去
@@ -90,6 +95,9 @@ def _launch_setup(context, *args, **kwargs):
     enable_alerts_str = LaunchConfiguration('enable_alerts').perform(context)
     enable_alerts = _parse_bool(enable_alerts_str)
 
+    enable_advisories_str = LaunchConfiguration('enable_advisories').perform(context)
+    enable_advisories = _parse_bool(enable_advisories_str)
+
     alerts_node_kind = LaunchConfiguration('alerts_node_kind').perform(context).strip().lower()
     lifecycle_autostart_str = LaunchConfiguration('lifecycle_autostart').perform(context)
     lifecycle_autostart = _parse_bool(lifecycle_autostart_str)
@@ -140,6 +148,25 @@ def _launch_setup(context, *args, **kwargs):
     alerts_qos_depth = int(LaunchConfiguration('alerts_qos_depth').perform(context))
     alerts_qos_reliability = LaunchConfiguration('alerts_qos_reliability').perform(context).strip()
     alerts_qos_durability = LaunchConfiguration('alerts_qos_durability').perform(context).strip()
+
+    advisories_qos_depth = int(LaunchConfiguration('advisories_qos_depth').perform(context))
+    advisories_qos_reliability = (
+        LaunchConfiguration('advisories_qos_reliability').perform(context).strip()
+    )
+    advisories_qos_durability = (
+        LaunchConfiguration('advisories_qos_durability').perform(context).strip()
+    )
+
+    advisories_window_sec = int(LaunchConfiguration('advisories_window_sec').perform(context))
+    advisories_window_size = int(
+        LaunchConfiguration('advisories_window_size').perform(context)
+    )
+    advisories_spo2_drop_threshold = float(
+        LaunchConfiguration('advisories_spo2_drop_threshold').perform(context)
+    )
+    advisories_hr_jump_threshold = float(
+        LaunchConfiguration('advisories_hr_jump_threshold').perform(context)
+    )
 
     sigterm_timeout = LaunchConfiguration('sigterm_timeout')
     sigkill_timeout = LaunchConfiguration('sigkill_timeout')
@@ -200,6 +227,35 @@ def _launch_setup(context, *args, **kwargs):
         )
     )
 
+    if enable_advisories:
+        for pid in patient_ids:
+            actions.append(
+                Node(
+                    package='medical_robot_sim',
+                    executable='advisory_publisher',
+                    name='advisory_publisher',
+                    namespace=pid,
+                    output='screen',
+                    parameters=[
+                        {'patient_id': pid},
+                        {'window_sec': advisories_window_sec},
+                        {'window_size': advisories_window_size},
+                        {'spo2_drop_threshold': advisories_spo2_drop_threshold},
+                        {'hr_jump_threshold': advisories_hr_jump_threshold},
+                        {'flatline_hr_epsilon': flatline_hr_epsilon},
+                        {'flatline_spo2_epsilon': flatline_spo2_epsilon},
+                        {'vitals_qos_depth': vitals_qos_depth},
+                        {'vitals_qos_reliability': vitals_qos_reliability},
+                        {'vitals_qos_durability': vitals_qos_durability},
+                        {'advisories_qos_depth': advisories_qos_depth},
+                        {'advisories_qos_reliability': advisories_qos_reliability},
+                        {'advisories_qos_durability': advisories_qos_durability},
+                    ],
+                    sigterm_timeout=sigterm_timeout,
+                    sigkill_timeout=sigkill_timeout,
+                )
+            )
+
     if enable_alerts:
         engine_params: list = [
             {'patients': patient_ids},
@@ -253,6 +309,14 @@ def generate_launch_description() -> LaunchDescription:
                 'enable_alerts',
                 default_value='true',
                 description='If true, start rule_alert_engine (publishes /<patient>/alerts).',
+            ),
+            DeclareLaunchArgument(
+                'enable_advisories',
+                default_value='false',
+                description=(
+                    '[Day16] If true, start advisory_publisher '
+                    '(publishes /<patient>/advisories).'
+                ),
             ),
             DeclareLaunchArgument(
                 'alerts_node_kind',
@@ -385,6 +449,42 @@ def generate_launch_description() -> LaunchDescription:
                 'alerts_qos_durability',
                 default_value='volatile',
                 description="[Day8] QoS durability for alerts: volatile | transient_local",
+            ),
+            DeclareLaunchArgument(
+                'advisories_qos_depth',
+                default_value='10',
+                description='[Day16] QoS depth for /<patient>/advisories (KEEP_LAST).',
+            ),
+            DeclareLaunchArgument(
+                'advisories_qos_reliability',
+                default_value='reliable',
+                description='[Day16] QoS reliability for advisories: reliable | best_effort',
+            ),
+            DeclareLaunchArgument(
+                'advisories_qos_durability',
+                default_value='volatile',
+                description='[Day16] QoS durability for advisories: volatile | transient_local',
+            ),
+
+            DeclareLaunchArgument(
+                'advisories_window_sec',
+                default_value=str(DEFAULT_WINDOW_SEC),
+                description='[Day16] Advisory detector window in seconds.',
+            ),
+            DeclareLaunchArgument(
+                'advisories_window_size',
+                default_value=str(DEFAULT_WINDOW_SIZE),
+                description='[Day16] Advisory detector window in samples (>=2).',
+            ),
+            DeclareLaunchArgument(
+                'advisories_spo2_drop_threshold',
+                default_value=str(DEFAULT_SPO2_DROP_THRESHOLD),
+                description='[Day16] Advisory detector SpO2 drop threshold.',
+            ),
+            DeclareLaunchArgument(
+                'advisories_hr_jump_threshold',
+                default_value=str(DEFAULT_HR_JUMP_THRESHOLD),
+                description='[Day16] Advisory detector HR jump threshold.',
             ),
 
             DeclareLaunchArgument(
