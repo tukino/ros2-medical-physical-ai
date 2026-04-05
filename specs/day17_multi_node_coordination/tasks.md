@@ -2,27 +2,27 @@
 
 ## Implementation tasks
 
-- [ ] `medical_robot_sim/coordination_policy.py` を追加する（pure functions）
-  - [ ] ready 判定（min_messages_per_patient）
-  - [ ] NO_DATA 判定（no_data_after_sec）
-  - [ ] 「全患者 NO_DATA のときだけ deactivate」判定
+- [x] `medical_robot_sim/coordination_policy.py` を追加する（pure functions）
+  - [x] ready 判定（min_messages_per_patient）
+  - [x] NO_DATA 判定（no_data_after_sec）
+  - [x] 「全患者 NO_DATA のときだけ deactivate」判定
 
-- [ ] `medical_robot_sim/icu_coordinator.py` を追加する
-  - [ ] `patients`（string array）と `vitals_topic` を受け取れる
-  - [ ] `/patient_XX/patient_vitals` を patients 分 subscribe できる（Day8 QoS params を使用）
-  - [ ] vitals 受信回数を patient ごとにカウントし、ready を判定できる
-  - [ ] lifecycle service client（`/rule_alert_engine/get_state`, `/rule_alert_engine/change_state`）を持つ
-  - [ ] ready 到達で `configure -> activate` を実行する
-  - [ ] （任意・既定ON）全患者 NO_DATA で `deactivate`、復帰で再 `activate`
-  - [ ] Day11形式ログを出す（`event=coord.*`）
-  - [ ] Ctrl+C で clean shutdown
+- [x] `medical_robot_sim/icu_coordinator.py` を追加する
+  - [x] `patients`（string array）と `vitals_topic` を受け取れる
+  - [x] `/patient_XX/patient_vitals` を patients 分 subscribe できる（Day8 QoS params を使用）
+  - [x] vitals 受信回数を patient ごとにカウントし、ready を判定できる
+  - [x] lifecycle service client（`/rule_alert_engine/get_state`, `/rule_alert_engine/change_state`）を持つ
+  - [x] ready 到達で `configure -> activate` を実行する
+  - [x] （任意・既定ON）全患者 NO_DATA で `deactivate`、復帰で再 `activate`
+  - [x] Day11形式ログを出す（`event=coord.*`）
+  - [x] Ctrl+C で clean shutdown
 
-- [ ] `setup.py` の `console_scripts` に `icu_coordinator` を追加する
+- [x] `setup.py` の `console_scripts` に `icu_coordinator` を追加する
 
-- [ ] `launch/icu_multi_patient.launch.py` に coordinator 起動オプションを追加する
-  - [ ] `enable_coordination`（default `false`）
-  - [ ] `coord_*` 一式を launch arg 化し、`icu_coordinator` に渡す
-  - [ ] `enable_coordination:=true` のときのみ root namespace で `icu_coordinator` を起動
+- [x] `launch/icu_multi_patient.launch.py` に coordinator 起動オプションを追加する
+  - [x] `enable_coordination`（default `false`）
+  - [x] `coord_*` 一式を launch arg 化し、`icu_coordinator` に渡す
+  - [x] `enable_coordination:=true` のときのみ root namespace で `icu_coordinator` を起動
 
 ## Validation tasks
 
@@ -34,10 +34,10 @@
 
 ## Automated tests
 
-- [ ] `src/medical_robot_sim/test/test_day17_coordination_policy.py` を追加する
-  - [ ] ready 判定の境界値
-  - [ ] NO_DATA 判定の境界値
-  - [ ] 全患者 NO_DATA の判定
+- [x] `src/medical_robot_sim/test/test_day17_coordination_policy.py` を追加する
+  - [x] ready 判定の境界値
+  - [x] NO_DATA 判定の境界値
+  - [x] 全患者 NO_DATA の判定
 
 - [ ] `colcon test --packages-select medical_robot_sim` が成功する
 
