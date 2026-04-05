@@ -49,6 +49,27 @@ from medical_robot_sim.qos_profiles import build_qos_profile
 from medical_robot_sim.rule_alert_engine import format_alert_emit_event
 
 
+def _coerce_bool_param(value, *, default: bool) -> bool:
+    """Coerce a ROS parameter value to bool.
+
+    Guards against the common pitfall: bool('false') == True.
+    """
+
+    if value is None:
+        return bool(default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+
+    text = str(value).strip().lower()
+    if text in {'1', 'true', 'yes', 'on'}:
+        return True
+    if text in {'0', 'false', 'no', 'off'}:
+        return False
+    return bool(default)
+
+
 def _now_s(node: LifecycleNode) -> float:
     return float(node.get_clock().now().nanoseconds) / 1e9
 
@@ -675,9 +696,20 @@ def main(args=None):
         # lifecycle_autostart=true の場合は configure->activate を自動で行う
         # false の場合は unconfigured のまま待機し、外部から遷移させる
         try:
-            autostart = bool(node.get_parameter('lifecycle_autostart').value)
+            autostart_raw = node.get_parameter('lifecycle_autostart').value
+            autostart = _coerce_bool_param(autostart_raw, default=True)
         except Exception:
             autostart = True
+
+        try:
+            node.get_logger().info(
+                'event=lifecycle.autostart_decision '
+                f'lifecycle_autostart_raw={autostart_raw!r} '
+                f'type={type(autostart_raw).__name__} '
+                f'coerced={autostart}'
+            )
+        except Exception:
+            pass
         if autostart:
             try:
                 node.trigger_configure()

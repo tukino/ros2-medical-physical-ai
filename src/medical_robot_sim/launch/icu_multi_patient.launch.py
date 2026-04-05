@@ -98,6 +98,9 @@ def _launch_setup(context, *args, **kwargs):
     enable_advisories_str = LaunchConfiguration('enable_advisories').perform(context)
     enable_advisories = _parse_bool(enable_advisories_str)
 
+    enable_coordination_str = LaunchConfiguration('enable_coordination').perform(context)
+    enable_coordination = _parse_bool(enable_coordination_str)
+
     alerts_node_kind = LaunchConfiguration('alerts_node_kind').perform(context).strip().lower()
     lifecycle_autostart_str = LaunchConfiguration('lifecycle_autostart').perform(context)
     lifecycle_autostart = _parse_bool(lifecycle_autostart_str)
@@ -168,6 +171,24 @@ def _launch_setup(context, *args, **kwargs):
         LaunchConfiguration('advisories_hr_jump_threshold').perform(context)
     )
 
+    coord_min_messages_per_patient = int(
+        LaunchConfiguration('coord_min_messages_per_patient').perform(context)
+    )
+    coord_ready_timeout_sec = float(
+        LaunchConfiguration('coord_ready_timeout_sec').perform(context)
+    )
+    coord_check_period_sec = float(
+        LaunchConfiguration('coord_check_period_sec').perform(context)
+    )
+    coord_stale_after_sec = float(LaunchConfiguration('coord_stale_after_sec').perform(context))
+    coord_no_data_after_sec = float(
+        LaunchConfiguration('coord_no_data_after_sec').perform(context)
+    )
+    coord_deactivate_on_no_data_str = LaunchConfiguration(
+        'coord_deactivate_on_no_data'
+    ).perform(context)
+    coord_deactivate_on_no_data = _parse_bool(coord_deactivate_on_no_data_str)
+
     sigterm_timeout = LaunchConfiguration('sigterm_timeout')
     sigkill_timeout = LaunchConfiguration('sigkill_timeout')
 
@@ -226,6 +247,31 @@ def _launch_setup(context, *args, **kwargs):
             sigkill_timeout=sigkill_timeout,
         )
     )
+
+    if enable_coordination:
+        actions.append(
+            Node(
+                package='medical_robot_sim',
+                executable='icu_coordinator',
+                name='icu_coordinator',
+                output='screen',
+                parameters=[
+                    {'patients': patient_ids},
+                    {'vitals_topic': 'patient_vitals'},
+                    {'min_messages_per_patient': coord_min_messages_per_patient},
+                    {'ready_timeout_sec': coord_ready_timeout_sec},
+                    {'check_period_sec': coord_check_period_sec},
+                    {'stale_after_sec': coord_stale_after_sec},
+                    {'no_data_after_sec': coord_no_data_after_sec},
+                    {'deactivate_on_no_data': bool(coord_deactivate_on_no_data)},
+                    {'vitals_qos_depth': vitals_qos_depth},
+                    {'vitals_qos_reliability': vitals_qos_reliability},
+                    {'vitals_qos_durability': vitals_qos_durability},
+                ],
+                sigterm_timeout=sigterm_timeout,
+                sigkill_timeout=sigkill_timeout,
+            )
+        )
 
     if enable_advisories:
         for pid in patient_ids:
@@ -316,6 +362,14 @@ def generate_launch_description() -> LaunchDescription:
                 description=(
                     '[Day16] If true, start advisory_publisher '
                     '(publishes /<patient>/advisories).'
+                ),
+            ),
+            DeclareLaunchArgument(
+                'enable_coordination',
+                default_value='false',
+                description=(
+                    '[Day17] If true, start icu_coordinator (root namespace) '
+                    'and orchestrate lifecycle rule_alert_engine.'
                 ),
             ),
             DeclareLaunchArgument(
@@ -485,6 +539,37 @@ def generate_launch_description() -> LaunchDescription:
                 'advisories_hr_jump_threshold',
                 default_value=str(DEFAULT_HR_JUMP_THRESHOLD),
                 description='[Day16] Advisory detector HR jump threshold.',
+            ),
+
+            DeclareLaunchArgument(
+                'coord_min_messages_per_patient',
+                default_value='1',
+                description='[Day17] Readiness: minimum vitals messages per patient.',
+            ),
+            DeclareLaunchArgument(
+                'coord_ready_timeout_sec',
+                default_value='10.0',
+                description='[Day17] Seconds before coordinator logs ready timeout.',
+            ),
+            DeclareLaunchArgument(
+                'coord_check_period_sec',
+                default_value='1.0',
+                description='[Day17] Coordinator check loop period in seconds.',
+            ),
+            DeclareLaunchArgument(
+                'coord_stale_after_sec',
+                default_value='3.0',
+                description='[Day17] Data is stale after this age (seconds).',
+            ),
+            DeclareLaunchArgument(
+                'coord_no_data_after_sec',
+                default_value='10.0',
+                description='[Day17] Data is NO_DATA after this age (seconds).',
+            ),
+            DeclareLaunchArgument(
+                'coord_deactivate_on_no_data',
+                default_value='true',
+                description='[Day17] If true, deactivate lifecycle alerts engine on NO_DATA.',
             ),
 
             DeclareLaunchArgument(
