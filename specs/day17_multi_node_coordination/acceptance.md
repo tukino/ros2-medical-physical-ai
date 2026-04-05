@@ -146,6 +146,17 @@ colcon test-result --verbose
     exit 1
   fi
 
+  # coordinator が無効なので、/icu_coordinator が存在しないこと
+  if ros2 node list 2>/dev/null | grep -q -x "/icu_coordinator"; then
+    echo "ERROR: /icu_coordinator is running although enable_coordination=false" >&2
+    echo "--- /tmp/day17_no_coord.log (tail) ---" >&2
+    tail -n 200 /tmp/day17_no_coord.log >&2 || true
+    # Stop launch
+    kill -INT "${LAUNCH_PID}" 2>/dev/null || true
+    wait "${LAUNCH_PID}" 2>/dev/null || true
+    exit 1
+  fi
+
   # coordinator が無効なので、状態が active でないこと（unconfigured/inactive を許容）
   ros2 lifecycle get /rule_alert_engine | tee /tmp/day17_lc_state_no_coord.txt
   if grep -n -w "active" /tmp/day17_lc_state_no_coord.txt; then
