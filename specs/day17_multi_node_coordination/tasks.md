@@ -26,11 +26,11 @@
 
 ## Validation tasks
 
-- [ ] 後方互換: `enable_coordination:=false` のとき coordinator が起動しない
-- [ ] `alerts_node_kind:=lifecycle lifecycle_autostart:=false enable_coordination:=true` で、
+- [ ] 後方互換: `enable_coordination:=false` のとき coordinator が起動しない（acceptance Step3 で確認）
+- [x] `alerts_node_kind:=lifecycle lifecycle_autostart:=false enable_coordination:=true` で、
   `ros2 lifecycle get /rule_alert_engine` が `active` になる
-- [ ] `event=coord.config` と `event=coord.lifecycle_set` がログに残る
-- [ ] Ctrl+C 停止で `Traceback` / `KeyboardInterrupt` が出ない
+- [x] `event=coord.config` と `event=coord.lifecycle_set` がログに残る
+- [x] Ctrl+C 停止で `Traceback` / `KeyboardInterrupt` が出ない
 
 ## Automated tests
 
@@ -39,10 +39,10 @@
   - [x] NO_DATA 判定の境界値
   - [x] 全患者 NO_DATA の判定
 
-- [ ] `colcon test --packages-select medical_robot_sim` が成功する
+- [x] `colcon test --packages-select medical_robot_sim` が成功する
 
 ## Docs update tasks
 
-- [ ] `docs/day17_multi_node_coordination.md` に Quickstart と acceptance 導線がある
-- [ ] `specs/day17_multi_node_coordination/spec.md` / `tasks.md` / `acceptance.md` が揃っている
-- [ ] README へ追記する場合は「最短導線リンクのみ」に留める（詳細は docs/specs に集約）
+- [x] `docs/day17_multi_node_coordination.md` に Quickstart と acceptance 導線がある
+- [x] `specs/day17_multi_node_coordination/spec.md` / `tasks.md` / `acceptance.md` が揃っている
+- [x] README へ追記する場合は「最短導線リンクのみ」に留める（詳細は docs/specs に集約）
