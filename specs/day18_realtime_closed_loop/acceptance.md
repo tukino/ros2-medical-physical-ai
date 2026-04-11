@@ -29,8 +29,10 @@ colcon test-result --verbose
 (
   set -euo pipefail
   cd ~/ros2_ws
+  set +u
   source /opt/ros/humble/setup.bash
   source install/setup.bash
+  set -u
 
   ros2 pkg executables medical_robot_sim | tee /tmp/day18_pkg_execs.txt
   grep -n "closed_loop_controller" /tmp/day18_pkg_execs.txt
@@ -55,8 +57,10 @@ colcon test-result --verbose
 (
   set -euo pipefail
   cd ~/ros2_ws
+  set +u
   source /opt/ros/humble/setup.bash
   source install/setup.bash
+  set -u
 
   export ROS2CLI_NO_DAEMON=1
 
@@ -80,11 +84,39 @@ colcon test-result --verbose
     echo "ERROR: control topic exists while enable_closed_loop=false" >&2
     tail -n 200 /tmp/day18_no_loop.log >&2 || true
     kill -INT "${LAUNCH_PID}" 2>/dev/null || true
+    DEADLINE=$((SECONDS+10))
+    while kill -0 "${LAUNCH_PID}" 2>/dev/null; do
+      if [ "${SECONDS}" -ge "${DEADLINE}" ]; then
+        break
+      fi
+      sleep 1
+    done
+    if kill -0 "${LAUNCH_PID}" 2>/dev/null; then
+      kill -TERM "${LAUNCH_PID}" 2>/dev/null || true
+      sleep 2
+    fi
+    if kill -0 "${LAUNCH_PID}" 2>/dev/null; then
+      kill -KILL "${LAUNCH_PID}" 2>/dev/null || true
+    fi
     wait "${LAUNCH_PID}" 2>/dev/null || true
     exit 1
   fi
 
   kill -INT "${LAUNCH_PID}" 2>/dev/null || true
+  DEADLINE=$((SECONDS+10))
+  while kill -0 "${LAUNCH_PID}" 2>/dev/null; do
+    if [ "${SECONDS}" -ge "${DEADLINE}" ]; then
+      break
+    fi
+    sleep 1
+  done
+  if kill -0 "${LAUNCH_PID}" 2>/dev/null; then
+    kill -TERM "${LAUNCH_PID}" 2>/dev/null || true
+    sleep 2
+  fi
+  if kill -0 "${LAUNCH_PID}" 2>/dev/null; then
+    kill -KILL "${LAUNCH_PID}" 2>/dev/null || true
+  fi
   wait "${LAUNCH_PID}" 2>/dev/null || true
 
   grep -n "event=control\." /tmp/day18_no_loop.log && {
@@ -107,8 +139,10 @@ colcon test-result --verbose
 (
   set -euo pipefail
   cd ~/ros2_ws
+  set +u
   source /opt/ros/humble/setup.bash
   source install/setup.bash
+  set -u
 
   export ROS2CLI_NO_DAEMON=1
 
@@ -144,11 +178,26 @@ colcon test-result --verbose
     echo "ERROR: /patient_01/control_actions not found" >&2
     tail -n 200 /tmp/day18_loop.log >&2 || true
     kill -INT "${LAUNCH_PID}" 2>/dev/null || true
+    DEADLINE=$((SECONDS+10))
+    while kill -0 "${LAUNCH_PID}" 2>/dev/null; do
+      if [ "${SECONDS}" -ge "${DEADLINE}" ]; then
+        break
+      fi
+      sleep 1
+    done
+    if kill -0 "${LAUNCH_PID}" 2>/dev/null; then
+      kill -TERM "${LAUNCH_PID}" 2>/dev/null || true
+      sleep 2
+    fi
+    if kill -0 "${LAUNCH_PID}" 2>/dev/null; then
+      kill -KILL "${LAUNCH_PID}" 2>/dev/null || true
+    fi
     wait "${LAUNCH_PID}" 2>/dev/null || true
     exit 1
   fi
 
-  ros2 topic echo --once /patient_01/control_actions > /tmp/day18_control_once.txt
+  timeout -s INT 15s ros2 topic echo --once /patient_01/control_actions \
+    > /tmp/day18_control_once.txt 2>&1 || true
 
   grep -n "event=control\.config" /tmp/day18_loop.log
   grep -n "event=control\.decision" /tmp/day18_loop.log
@@ -158,6 +207,20 @@ colcon test-result --verbose
   grep -n "rule_id: control\." /tmp/day18_control_once.txt
 
   kill -INT "${LAUNCH_PID}" 2>/dev/null || true
+  DEADLINE=$((SECONDS+10))
+  while kill -0 "${LAUNCH_PID}" 2>/dev/null; do
+    if [ "${SECONDS}" -ge "${DEADLINE}" ]; then
+      break
+    fi
+    sleep 1
+  done
+  if kill -0 "${LAUNCH_PID}" 2>/dev/null; then
+    kill -TERM "${LAUNCH_PID}" 2>/dev/null || true
+    sleep 2
+  fi
+  if kill -0 "${LAUNCH_PID}" 2>/dev/null; then
+    kill -KILL "${LAUNCH_PID}" 2>/dev/null || true
+  fi
   wait "${LAUNCH_PID}" 2>/dev/null || true
 
   if grep -n "Traceback\|KeyboardInterrupt" /tmp/day18_loop.log; then
@@ -182,8 +245,10 @@ colcon test-result --verbose
 (
   set -euo pipefail
   cd ~/ros2_ws
+  set +u
   source /opt/ros/humble/setup.bash
   source install/setup.bash
+  set -u
 
   rm -f /tmp/day18_cooldown.log
 

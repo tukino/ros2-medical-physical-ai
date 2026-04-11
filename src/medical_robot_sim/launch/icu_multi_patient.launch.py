@@ -101,6 +101,9 @@ def _launch_setup(context, *args, **kwargs):
     enable_coordination_str = LaunchConfiguration('enable_coordination').perform(context)
     enable_coordination = _parse_bool(enable_coordination_str)
 
+    enable_closed_loop_str = LaunchConfiguration('enable_closed_loop').perform(context)
+    enable_closed_loop = _parse_bool(enable_closed_loop_str)
+
     alerts_node_kind = LaunchConfiguration('alerts_node_kind').perform(context).strip().lower()
     lifecycle_autostart_str = LaunchConfiguration('lifecycle_autostart').perform(context)
     lifecycle_autostart = _parse_bool(lifecycle_autostart_str)
@@ -188,6 +191,20 @@ def _launch_setup(context, *args, **kwargs):
         'coord_deactivate_on_no_data'
     ).perform(context)
     coord_deactivate_on_no_data = _parse_bool(coord_deactivate_on_no_data_str)
+
+    control_topic = LaunchConfiguration('control_topic').perform(context).strip()
+    control_cooldown_sec = float(LaunchConfiguration('control_cooldown_sec').perform(context))
+    control_no_data_after_sec = float(
+        LaunchConfiguration('control_no_data_after_sec').perform(context)
+    )
+    control_low_spo2 = float(LaunchConfiguration('control_low_spo2').perform(context))
+    control_critical_spo2 = float(
+        LaunchConfiguration('control_critical_spo2').perform(context)
+    )
+    enable_control_from_advisories_str = LaunchConfiguration(
+        'enable_control_from_advisories'
+    ).perform(context)
+    enable_control_from_advisories = _parse_bool(enable_control_from_advisories_str)
 
     sigterm_timeout = LaunchConfiguration('sigterm_timeout')
     sigkill_timeout = LaunchConfiguration('sigkill_timeout')
@@ -302,6 +319,38 @@ def _launch_setup(context, *args, **kwargs):
                 )
             )
 
+    if enable_closed_loop:
+        for pid in patient_ids:
+            actions.append(
+                Node(
+                    package='medical_robot_sim',
+                    executable='closed_loop_controller',
+                    name='closed_loop_controller',
+                    namespace=pid,
+                    output='screen',
+                    parameters=[
+                        {'patient_id': pid},
+                        {'vitals_topic': 'patient_vitals'},
+                        {'alerts_topic': 'alerts'},
+                        {'advisories_topic': 'advisories'},
+                        {'control_topic': control_topic},
+                        {'enable_control_from_advisories': bool(enable_control_from_advisories)},
+                        {'control_cooldown_sec': control_cooldown_sec},
+                        {'control_no_data_after_sec': control_no_data_after_sec},
+                        {'control_low_spo2': control_low_spo2},
+                        {'control_critical_spo2': control_critical_spo2},
+                        {'vitals_qos_depth': vitals_qos_depth},
+                        {'vitals_qos_reliability': vitals_qos_reliability},
+                        {'vitals_qos_durability': vitals_qos_durability},
+                        {'alerts_qos_depth': alerts_qos_depth},
+                        {'alerts_qos_reliability': alerts_qos_reliability},
+                        {'alerts_qos_durability': alerts_qos_durability},
+                    ],
+                    sigterm_timeout=sigterm_timeout,
+                    sigkill_timeout=sigkill_timeout,
+                )
+            )
+
     if enable_alerts:
         engine_params: list = [
             {'patients': patient_ids},
@@ -370,6 +419,14 @@ def generate_launch_description() -> LaunchDescription:
                 description=(
                     '[Day17] If true, start icu_coordinator (root namespace) '
                     'and orchestrate lifecycle rule_alert_engine.'
+                ),
+            ),
+            DeclareLaunchArgument(
+                'enable_closed_loop',
+                default_value='false',
+                description=(
+                    '[Day18] If true, start closed_loop_controller '
+                    '(publishes /<patient>/control_actions).'
                 ),
             ),
             DeclareLaunchArgument(
@@ -570,6 +627,37 @@ def generate_launch_description() -> LaunchDescription:
                 'coord_deactivate_on_no_data',
                 default_value='true',
                 description='[Day17] If true, deactivate lifecycle alerts engine on NO_DATA.',
+            ),
+
+            DeclareLaunchArgument(
+                'control_topic',
+                default_value='control_actions',
+                description='[Day18] Relative topic name for control actions.',
+            ),
+            DeclareLaunchArgument(
+                'control_cooldown_sec',
+                default_value='5.0',
+                description='[Day18] Minimum seconds between control action publishes.',
+            ),
+            DeclareLaunchArgument(
+                'control_no_data_after_sec',
+                default_value='10.0',
+                description='[Day18] Data age threshold to force safe HOLD.',
+            ),
+            DeclareLaunchArgument(
+                'control_low_spo2',
+                default_value='92.0',
+                description='[Day18] SpO2 threshold for OXYGEN_BOOST action.',
+            ),
+            DeclareLaunchArgument(
+                'control_critical_spo2',
+                default_value='88.0',
+                description='[Day18] SpO2 threshold for CALL_STAFF action.',
+            ),
+            DeclareLaunchArgument(
+                'enable_control_from_advisories',
+                default_value='false',
+                description='[Day18] If true, advisories can influence control decisions.',
             ),
 
             DeclareLaunchArgument(

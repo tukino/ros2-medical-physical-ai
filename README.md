@@ -46,6 +46,8 @@ Day3 の shutdown / clean exit の学びは [docs/day3_shutdown_clean_exit.md](d
   - 受け入れ（コピペ手順）: [specs/day14_jetson/acceptance.md](specs/day14_jetson/acceptance.md)
 - Day15 EEG/BCI入力: [docs/day15_eeg_bci_input.md](docs/day15_eeg_bci_input.md)
   - 受け入れ（コピペ手順）: [specs/day15_eeg_bci_input/acceptance.md](specs/day15_eeg_bci_input/acceptance.md)
+- Day18 リアルタイム制御（閉ループ）: [docs/day18_realtime_closed_loop.md](docs/day18_realtime_closed_loop.md)
+  - 受け入れ（コピペ手順）: [specs/day18_realtime_closed_loop/acceptance.md](specs/day18_realtime_closed_loop/acceptance.md)
 - Day6 flatline: [docs/day6_flatline.md](docs/day6_flatline.md)
 - Day7 ルール外部化（YAML）: [docs/day7_rule_externalization.md](docs/day7_rule_externalization.md)
 - Day8 QoS: [docs/day8_qos.md](docs/day8_qos.md)

@@ -51,6 +51,7 @@ setup(
             'icu_monitor = medical_robot_sim.icu_monitor:main',
             'icu_coordinator = medical_robot_sim.icu_coordinator:main',
             'advisory_publisher = medical_robot_sim.advisory_publisher:main',
+            'closed_loop_controller = medical_robot_sim.closed_loop_controller:main',
             'bci_sensor = medical_robot_sim.bci_sensor:main',
             'bci_monitor = medical_robot_sim.bci_monitor:main',
             'rule_alert_engine = medical_robot_sim.rule_alert_engine:main',
