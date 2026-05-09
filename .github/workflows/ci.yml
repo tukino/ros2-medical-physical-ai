@@ -106,6 +106,7 @@ jobs:
           name: ros2-ci-smoke-artifacts
           path: .ci_artifacts/
           if-no-files-found: ignore
+          include-hidden-files: true
 
   docker-build:
     name: Build development image
