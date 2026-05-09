@@ -1,0 +1,24 @@
+{
+  "name": "ROS 2 Humble Medical Physical AI",
+  "build": {
+    "dockerfile": "../Dockerfile",
+    "context": ".."
+  },
+  "workspaceFolder": "/workspace",
+  "runArgs": [
+    "--network=host"
+  ],
+  "containerEnv": {
+    "ROS_DOMAIN_ID": "0"
+  },
+  "postCreateCommand": "bash -lc 'source /opt/ros/humble/setup.bash && rosdep install --from-paths src --ignore-src -r -y --rosdistro humble && colcon build --symlink-install'",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-iot.vscode-ros",
+        "ms-python.python",
+        "ms-python.vscode-pylance"
+      ]
+    }
+  }
+}

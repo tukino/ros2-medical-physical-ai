@@ -1,0 +1,12 @@
+.git/
+.github/
+.devcontainer/
+build/
+install/
+log/
+bags/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.db3
+*.mcap
