@@ -63,6 +63,10 @@ through `icu_replay.launch.py` without starting a sensor, and verifies that
 - records and replays a rosbag, then verifies replay-generated alerts
 - builds the repository `Dockerfile` to catch development image regressions
 
+The workspace job uploads `.ci_artifacts/` as `ros2-ci-smoke-artifacts` so
+failed smoke tests keep their launch, echo, rosbag record, and rosbag replay
+logs for debugging.
+
 The workflow is intentionally small and uses package manifests plus `rosdep`
 as the dependency source of truth.
 
