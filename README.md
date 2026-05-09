@@ -1,40 +1,147 @@
-# ICU 複数患者 VitalSigns 監視（ROS 2 Humble / colcon workspace）
+# ROS 2 Medical Physical AI Lab（ROS 2 Humble / colcon workspace）
 
-複数患者（例: `patient_01`, `patient_02`）のバイタルを **namespace で分離**して publish し、集約ノードが患者ごとのトピックを subscribe して一覧表示します。
+複数患者（例: `patient_01`, `patient_02`）のバイタルを **namespace で分離**して publish し、
+監視・アラート・助言・協調・閉ループ制御までをROS 2上で段階的に学ぶための実験用リポジトリです。
 
 ## 目的と設計思想
-このリポジトリは、ROS 2 Humble 上で「複数患者のバイタル監視」を題材に、**再現可能な colcon workspace** としての構成・運用（起動/停止/確認）をまとめた学習用サンプルです。
+このリポジトリは、ROS 2 Humble 上で「複数患者のバイタル監視」を題材に、
+**センサー → 分散処理 → 判断 → アクション** までを一貫して扱えるようになることを目的にした
+再現可能な colcon workspace です。
 
-- **型安全メッセージ**: 独自 msg（`medical_interfaces/VitalSigns.msg`）でバイタルデータを型として定義し、ノード間通信を明確化します。
+- **型安全メッセージ**: 独自 msg（`src/medical_interfaces/msg/VitalSigns.msg` など）でバイタルデータやアラートを型として定義し、ノード間通信を明確化します。
 - **namespace 分離**: 患者ごとに namespace を切って同一ノードを複数起動し、トピック衝突を避けながらスケールさせます。
+- **疎結合な機能追加**: alerts / advisories / control actions を topic と launch 引数で追加し、既存の topic 契約を維持します。
+- **再現性重視**: fault injection、grep可能なイベントログ、rosbag replay、pytest を組み合わせて、同じ条件で検証できる状態を保ちます。
 - **clean shutdown 設計**: `Ctrl+C` で確実に落ちることを前提に、launch 側の猶予設定と node 側の終了処理を整えています。
+
+> [!IMPORTANT]
+> このリポジトリはROS 2学習・研究・デモ用です。医療機器、診断、治療、実患者監視での利用を目的としたものではありません。
+
+## 現在の到達点
+
+初期の「複数患者のVitalSigns監視」から、現在は次の範囲まで拡張しています。
+
+| 領域 | 実装内容 |
+| --- | --- |
+| 基本通信 | `VitalSigns.msg` / `Alert.msg` / `BCIFeatures.msg` による型付きtopic通信 |
+| スケール | 患者ごとのnamespace分離とmulti-patient launch |
+| 監視・異常検知 | dashboard表示、rule-based alerts、flatline検知、YAMLルール外部化 |
+| システム設計 | QoS明示化、Lifecycle Node、Fault Injection、Logging/Tracing |
+| 再現性 | rosbag record/play、replay専用launch、acceptance手順 |
+| Physical化 | 実センサーI2C/SPIのmock/抽象化、Jetson/edge向け設計メモ |
+| 応用 | EEG/BCI入力、advisory layer、multi-node coordination、closed-loop control |
 
 構成（処理の流れ）は次のとおりです。
 
-## アーキテクチャ図（概要）
+## アーキテクチャ図（現在）
 
 ```plantuml
 @startuml
-package "Patient Namespace (/patient_x)" {
+skinparam componentStyle rectangle
+
+package "Patient Namespace (/patient_XX)" {
   [vital_sensor]
+  [bci_sensor]
+  [advisory_publisher]
+  [closed_loop_controller]
+
+  [vital_sensor] --> (patient_vitals)
+  [bci_sensor] --> (patient_bci)
+  (patient_vitals) --> [advisory_publisher]
+  (patient_vitals) --> [closed_loop_controller]
+  (alerts) --> [closed_loop_controller]
+  (advisories) --> [closed_loop_controller]
+  [advisory_publisher] --> (advisories)
+  [closed_loop_controller] --> (control_actions)
 }
 
 [icu_monitor]
+[bci_monitor]
+[alert engine\n(selected by alerts_node_kind)] as alert_engine
+[icu_coordinator]
 
-vital_sensor --> icu_monitor : VitalSigns.msg
+(patient_vitals) --> [icu_monitor] : VitalSigns.msg
+(patient_bci) --> [bci_monitor] : BCIFeatures.msg
+(patient_vitals) --> alert_engine : VitalSigns.msg
+alert_engine --> (alerts) : Alert.msg
+[icu_coordinator] ..> alert_engine : lifecycle services when lifecycle mode
 @enduml
 ```
 
 - `vital_sensor` が相対トピック `patient_vitals` に publish（例: `/patient_01/patient_vitals`）
 - `icu_monitor` が `patients` 引数から購読先 `/{pid}/patient_vitals` を決定
+- `bci_sensor` が相対トピック `patient_bci` に publish し、`bci_monitor` が `/{pid}/patient_bci` を購読
+- alert engine は `alerts_node_kind:=classic|lifecycle` で classic 実装または Lifecycle 実装のどちらか一方を起動し、どちらもノード名 `rule_alert_engine` として `/{pid}/alerts` を publish
+- `advisory_publisher` が `/{pid}/advisories` を追加topicとして publish
+- `closed_loop_controller` が vitals / alerts / advisories から `/{pid}/control_actions` を publish
+- `icu_coordinator` がLifecycleモードの `rule_alert_engine` の状態遷移を制御
 
 Day3 の shutdown / clean exit の学びは [docs/day3_shutdown_clean_exit.md](docs/day3_shutdown_clean_exit.md) にまとめています。
+
+## 代表デモ
+
+### 1. 基本の複数患者監視
+
+```bash
+cd ~/ros2_ws
+source /opt/ros/humble/setup.bash
+colcon build --symlink-install
+source install/setup.bash
+
+ros2 launch medical_robot_sim icu_multi_patient.launch.py \
+  patients:=patient_01,patient_02
+```
+
+### 2. Fault Injection + alert観測
+
+```bash
+ros2 launch medical_robot_sim icu_multi_patient.launch.py \
+  patients:=patient_01 \
+  enable_alerts:=true \
+  scenario:=flatline
+```
+
+別ターミナル:
+
+```bash
+ros2 topic echo /patient_01/alerts --once
+```
+
+### 3. rosbag replayで再現検証
+
+```bash
+ros2 launch medical_robot_sim icu_replay.launch.py \
+  patients:=patient_01 \
+  enable_alerts:=true
+
+# 別プロセスで記録済みbagを再生
+ros2 bag play <bag_dir>
+```
+
+### 4. 閉ループ制御の最小デモ
+
+```bash
+ros2 launch medical_robot_sim icu_multi_patient.launch.py \
+  patients:=patient_01 \
+  enable_alerts:=true \
+  enable_closed_loop:=true \
+  scenario:=spo2_drop
+```
+
+確認:
+
+```bash
+ros2 topic echo /patient_01/control_actions --once
+```
 
 ## ドキュメント（Roadmap / 詳細）
 
 このリポジトリは「Dayごとの設計メモ」を docs/ 配下に蓄積していきます。README は最短で動かすための入口に留め、詳細は docs を参照してください。
 
 - 全体計画（Master Plan）: [docs/PLAN.md](docs/PLAN.md)
+- Day6 flatline: [docs/day6_flatline.md](docs/day6_flatline.md)
+- Day7 ルール外部化（YAML）: [docs/day7_rule_externalization.md](docs/day7_rule_externalization.md)
+- Day8 QoS: [docs/day8_qos.md](docs/day8_qos.md)
 - Day9 Lifecycle: [docs/day9_lifecycle.md](docs/day9_lifecycle.md)
 - Day10 Fault Injection: [docs/day10_fault_injection.md](docs/day10_fault_injection.md)
 - Day11 Logging/Tracing: [docs/day11_logging_tracing.md](docs/day11_logging_tracing.md)
@@ -46,11 +153,12 @@ Day3 の shutdown / clean exit の学びは [docs/day3_shutdown_clean_exit.md](d
   - 受け入れ（コピペ手順）: [specs/day14_jetson/acceptance.md](specs/day14_jetson/acceptance.md)
 - Day15 EEG/BCI入力: [docs/day15_eeg_bci_input.md](docs/day15_eeg_bci_input.md)
   - 受け入れ（コピペ手順）: [specs/day15_eeg_bci_input/acceptance.md](specs/day15_eeg_bci_input/acceptance.md)
+- Day16 異常検知AI（advisory layer）: [docs/day16_anomaly_detection_ai.md](docs/day16_anomaly_detection_ai.md)
+  - 受け入れ（コピペ手順）: [specs/day16_anomaly_detection_ai/acceptance.md](specs/day16_anomaly_detection_ai/acceptance.md)
+- Day17 マルチノード協調: [docs/day17_multi_node_coordination.md](docs/day17_multi_node_coordination.md)
+  - 受け入れ（コピペ手順）: [specs/day17_multi_node_coordination/acceptance.md](specs/day17_multi_node_coordination/acceptance.md)
 - Day18 リアルタイム制御（閉ループ）: [docs/day18_realtime_closed_loop.md](docs/day18_realtime_closed_loop.md)
   - 受け入れ（コピペ手順）: [specs/day18_realtime_closed_loop/acceptance.md](specs/day18_realtime_closed_loop/acceptance.md)
-- Day6 flatline: [docs/day6_flatline.md](docs/day6_flatline.md)
-- Day7 ルール外部化（YAML）: [docs/day7_rule_externalization.md](docs/day7_rule_externalization.md)
-- Day8 QoS: [docs/day8_qos.md](docs/day8_qos.md)
 
 ## 前提（ROS 2 Humble）
 - ROS 2 Humble がインストール済み
@@ -65,8 +173,8 @@ sudo apt install -y python3-colcon-common-extensions python3-rosdep
 ## 依存（rosdep）
 この workspace には 2 パッケージがあります。
 
-- `medical_interfaces`（`VitalSigns.msg`）
-- `medical_robot_sim`（`vital_sensor`, `icu_monitor`）
+- `medical_interfaces`（`msg/VitalSigns.msg`, `msg/Alert.msg`, `msg/BCIFeatures.msg`）
+- `medical_robot_sim`（`vital_sensor`, `icu_monitor`, `rule_alert_engine`, `advisory_publisher`, `icu_coordinator`, `closed_loop_controller` など）
 
 依存解決（初回のみ `rosdep update`）:
 ```bash
