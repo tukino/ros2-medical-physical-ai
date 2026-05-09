@@ -46,7 +46,7 @@ package "Patient Namespace (/patient_XX)" {
   [closed_loop_controller]
 
   [vital_sensor] --> (patient_vitals)
-  [bci_sensor] --> (bci_features)
+  [bci_sensor] --> (patient_bci)
   (patient_vitals) --> [advisory_publisher]
   (patient_vitals) --> [closed_loop_controller]
   (alerts) --> [closed_loop_controller]
@@ -56,25 +56,25 @@ package "Patient Namespace (/patient_XX)" {
 }
 
 [icu_monitor]
-[rule_alert_engine]
-[rule_alert_engine_lifecycle]
+[bci_monitor]
+[rule_alert_engine\n(classic or lifecycle)] as alert_engine
 [icu_coordinator]
 
 (patient_vitals) --> [icu_monitor] : VitalSigns.msg
-(patient_vitals) --> [rule_alert_engine] : VitalSigns.msg
-(patient_vitals) --> [rule_alert_engine_lifecycle] : VitalSigns.msg
-[rule_alert_engine] --> (alerts) : Alert.msg
-[rule_alert_engine_lifecycle] --> (alerts) : Alert.msg
-[icu_coordinator] ..> [rule_alert_engine_lifecycle] : lifecycle configure/activate/deactivate
+(patient_bci) --> [bci_monitor] : BCIFeatures.msg
+(patient_vitals) --> alert_engine : VitalSigns.msg
+alert_engine --> (alerts) : Alert.msg
+[icu_coordinator] ..> alert_engine : lifecycle services when lifecycle mode
 @enduml
 ```
 
 - `vital_sensor` が相対トピック `patient_vitals` に publish（例: `/patient_01/patient_vitals`）
 - `icu_monitor` が `patients` 引数から購読先 `/{pid}/patient_vitals` を決定
-- `rule_alert_engine` / `rule_alert_engine_lifecycle` が `/{pid}/alerts` を publish
+- `bci_sensor` が相対トピック `patient_bci` に publish し、`bci_monitor` が `/{pid}/patient_bci` を購読
+- alert engine は `alerts_node_kind:=classic|lifecycle` で classic 実装または Lifecycle 実装のどちらか一方を起動し、どちらもノード名 `rule_alert_engine` として `/{pid}/alerts` を publish
 - `advisory_publisher` が `/{pid}/advisories` を追加topicとして publish
 - `closed_loop_controller` が vitals / alerts / advisories から `/{pid}/control_actions` を publish
-- `icu_coordinator` がLifecycle版アラートエンジンの状態遷移を制御
+- `icu_coordinator` がLifecycleモードの `rule_alert_engine` の状態遷移を制御
 
 Day3 の shutdown / clean exit の学びは [docs/day3_shutdown_clean_exit.md](docs/day3_shutdown_clean_exit.md) にまとめています。
 
