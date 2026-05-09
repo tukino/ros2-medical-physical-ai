@@ -1,5 +1,7 @@
 # ROS 2 Medical Physical AI Lab（ROS 2 Humble / colcon workspace）
 
+[![ROS 2 CI](https://github.com/tukino/ros2-medical-physical-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/tukino/ros2-medical-physical-ai/actions/workflows/ci.yml)
+
 複数患者（例: `patient_01`, `patient_02`）のバイタルを **namespace で分離**して publish し、
 監視・アラート・助言・協調・閉ループ制御までをROS 2上で段階的に学ぶための実験用リポジトリです。
 
