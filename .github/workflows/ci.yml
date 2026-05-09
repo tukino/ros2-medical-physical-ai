@@ -53,6 +53,7 @@ jobs:
           colcon test --event-handlers console_direct+ --return-code-on-test-failure
 
       - name: Launch smoke test
+        timeout-minutes: 5
         run: |
           set -eo pipefail
           source /opt/ros/humble/setup.bash

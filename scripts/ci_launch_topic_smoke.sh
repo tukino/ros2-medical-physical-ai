@@ -15,6 +15,36 @@ ECHO_WAIT_SEC="${ECHO_WAIT_SEC:-35}"
 
 LAUNCH_PID=""
 
+stop_launch() {
+  if [ -z "${LAUNCH_PID}" ] || ! kill -0 "${LAUNCH_PID}" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  echo "Stopping launch process: ${LAUNCH_PID}"
+  kill -INT "${LAUNCH_PID}" >/dev/null 2>&1 || true
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    if ! kill -0 "${LAUNCH_PID}" >/dev/null 2>&1; then
+      wait "${LAUNCH_PID}" >/dev/null 2>&1 || true
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "Launch process did not stop after SIGINT; sending SIGTERM"
+  kill -TERM "${LAUNCH_PID}" >/dev/null 2>&1 || true
+  for _ in 1 2 3 4 5; do
+    if ! kill -0 "${LAUNCH_PID}" >/dev/null 2>&1; then
+      wait "${LAUNCH_PID}" >/dev/null 2>&1 || true
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "Launch process did not stop after SIGTERM; sending SIGKILL"
+  kill -KILL "${LAUNCH_PID}" >/dev/null 2>&1 || true
+  wait "${LAUNCH_PID}" >/dev/null 2>&1 || true
+}
+
 print_launch_log() {
   if [ -f "${LOG_FILE}" ]; then
     echo "----- launch log (${LOG_FILE}) -----"
@@ -25,10 +55,7 @@ print_launch_log() {
 
 cleanup() {
   local rc=$?
-  if [ -n "${LAUNCH_PID}" ] && kill -0 "${LAUNCH_PID}" >/dev/null 2>&1; then
-    kill -INT "${LAUNCH_PID}" >/dev/null 2>&1 || true
-    wait "${LAUNCH_PID}" >/dev/null 2>&1 || true
-  fi
+  stop_launch
   if [ "${rc}" -ne 0 ]; then
     print_launch_log
   fi
@@ -87,6 +114,8 @@ main() {
     scenario:=flatline \
     flatline_history_size:=3 \
     control_cooldown_sec:=1.0 \
+    sigterm_timeout:=2 \
+    sigkill_timeout:=2 \
     > "${LOG_FILE}" 2>&1 &
   LAUNCH_PID=$!
 
