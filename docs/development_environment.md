@@ -27,6 +27,18 @@ verifies one message from each representative topic:
 - `/patient_01/alerts`
 - `/patient_01/control_actions`
 
+To exercise a closed-loop action in the smoke test, run the same script with a
+SpO2-drop scenario and an expected control rule:
+
+```bash
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+SCENARIO=spo2_drop \
+CONTROL_LOW_SPO2=99.0 \
+EXPECTED_CONTROL_RULE_ID=control.oxygen_boost \
+  bash scripts/ci_launch_topic_smoke.sh
+```
+
 To run the rosbag reproducibility smoke test locally:
 
 ```bash
@@ -46,6 +58,8 @@ through `icu_replay.launch.py` without starting a sensor, and verifies that
 - builds and tests the colcon workspace in `ros:humble-ros-base`
 - starts the launch graph and verifies representative topics with
   `ros2 topic echo --once`
+- runs a SpO2-drop closed-loop smoke test and verifies
+  `control.oxygen_boost`
 - records and replays a rosbag, then verifies replay-generated alerts
 - builds the repository `Dockerfile` to catch development image regressions
 

@@ -62,6 +62,17 @@ jobs:
           source install/setup.bash
           bash scripts/ci_launch_topic_smoke.sh
 
+      - name: SpO2 drop control smoke test
+        timeout-minutes: 5
+        run: |
+          set -eo pipefail
+          source /opt/ros/humble/setup.bash
+          source install/setup.bash
+          SCENARIO=spo2_drop \
+          CONTROL_LOW_SPO2=99.0 \
+          EXPECTED_CONTROL_RULE_ID=control.oxygen_boost \
+            bash scripts/ci_launch_topic_smoke.sh
+
       - name: Rosbag replay smoke test
         timeout-minutes: 8
         run: |

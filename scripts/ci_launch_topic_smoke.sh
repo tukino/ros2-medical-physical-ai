@@ -10,8 +10,15 @@ set -eo pipefail
 
 PATIENT_ID="${PATIENT_ID:-patient_01}"
 LOG_FILE="${LOG_FILE:-/tmp/ros2_ci_launch_topic_smoke.log}"
+SCENARIO="${SCENARIO:-flatline}"
+FLATLINE_HISTORY_SIZE="${FLATLINE_HISTORY_SIZE:-3}"
+CONTROL_COOLDOWN_SEC="${CONTROL_COOLDOWN_SEC:-1.0}"
+CONTROL_LOW_SPO2="${CONTROL_LOW_SPO2:-92.0}"
+CONTROL_CRITICAL_SPO2="${CONTROL_CRITICAL_SPO2:-88.0}"
+EXPECTED_CONTROL_RULE_ID="${EXPECTED_CONTROL_RULE_ID:-}"
 TOPIC_WAIT_SEC="${TOPIC_WAIT_SEC:-30}"
 ECHO_WAIT_SEC="${ECHO_WAIT_SEC:-35}"
+CONTROL_ONCE_LOG="${CONTROL_ONCE_LOG:-/tmp/ros2_ci_control_once.log}"
 
 LAUNCH_PID=""
 
@@ -109,6 +116,13 @@ echo_once() {
   timeout "${ECHO_WAIT_SEC}s" ros2 topic echo "${topic}" "${msg_type}" --once
 }
 
+echo_control_once() {
+  local topic="/${PATIENT_ID}/control_actions"
+  echo "echo once: ${topic} (medical_interfaces/msg/Alert)"
+  timeout "${ECHO_WAIT_SEC}s" ros2 topic echo \
+    "${topic}" medical_interfaces/msg/Alert --once | tee "${CONTROL_ONCE_LOG}"
+}
+
 main() {
   rm -f "${LOG_FILE}"
 
@@ -116,9 +130,11 @@ main() {
     patients:="${PATIENT_ID}" \
     enable_alerts:=true \
     enable_closed_loop:=true \
-    scenario:=flatline \
-    flatline_history_size:=3 \
-    control_cooldown_sec:=1.0 \
+    scenario:="${SCENARIO}" \
+    flatline_history_size:="${FLATLINE_HISTORY_SIZE}" \
+    control_cooldown_sec:="${CONTROL_COOLDOWN_SEC}" \
+    control_low_spo2:="${CONTROL_LOW_SPO2}" \
+    control_critical_spo2:="${CONTROL_CRITICAL_SPO2}" \
     sigterm_timeout:=2 \
     sigkill_timeout:=2 \
     > "${LOG_FILE}" 2>&1 &
@@ -130,7 +146,11 @@ main() {
 
   echo_once "/${PATIENT_ID}/patient_vitals" "medical_interfaces/msg/VitalSigns"
   echo_once "/${PATIENT_ID}/alerts" "medical_interfaces/msg/Alert"
-  echo_once "/${PATIENT_ID}/control_actions" "medical_interfaces/msg/Alert"
+  echo_control_once
+
+  if [ -n "${EXPECTED_CONTROL_RULE_ID}" ]; then
+    grep -n "rule_id: ${EXPECTED_CONTROL_RULE_ID}" "${CONTROL_ONCE_LOG}"
+  fi
 
   if ! kill -0 "${LAUNCH_PID}" >/dev/null 2>&1; then
     echo "ERROR: launch process exited before cleanup" >&2
@@ -138,7 +158,7 @@ main() {
     return 1
   fi
 
-  echo "CI launch/topic smoke test passed"
+  echo "CI launch/topic smoke test passed (scenario=${SCENARIO})"
 }
 
 main "$@"
