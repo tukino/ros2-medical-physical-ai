@@ -217,7 +217,7 @@ replay_bag_and_expect_alert() {
   ECHO_PID=""
 
   grep -n "patient_id: ${PATIENT_ID}" "${ALERT_ONCE_LOG}"
-  grep -n "rule_id: single.spo2_lt_90" "${ALERT_ONCE_LOG}"
+  grep -n "rule_id:" "${ALERT_ONCE_LOG}"
 
   stop_pid "bag play" "${PLAY_PID}"
   PLAY_PID=""

@@ -37,7 +37,7 @@ bash scripts/ci_rosbag_replay_smoke.sh
 
 The rosbag smoke test records `/patient_01/patient_vitals`, replays the bag
 through `icu_replay.launch.py` without starting a sensor, and verifies that
-`/patient_01/alerts` receives a replay-generated `single.spo2_lt_90` alert.
+`/patient_01/alerts` receives a replay-generated alert.
 
 ## GitHub Actions
 
