@@ -12,11 +12,28 @@ colcon test --event-handlers console_direct+ --return-code-on-test-failure
 colcon test-result --verbose
 ```
 
+To also run the CI runtime smoke test locally:
+
+```bash
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+bash scripts/ci_launch_topic_smoke.sh
+```
+
+The smoke test starts `icu_multi_patient.launch.py` for `patient_01` and
+verifies one message from each representative topic:
+
+- `/patient_01/patient_vitals`
+- `/patient_01/alerts`
+- `/patient_01/control_actions`
+
 ## GitHub Actions
 
 `.github/workflows/ci.yml` runs two checks:
 
 - builds and tests the colcon workspace in `ros:humble-ros-base`
+- starts the launch graph and verifies representative topics with
+  `ros2 topic echo --once`
 - builds the repository `Dockerfile` to catch development image regressions
 
 The workflow is intentionally small and uses package manifests plus `rosdep`
