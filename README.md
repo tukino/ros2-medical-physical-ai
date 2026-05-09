@@ -8,7 +8,7 @@
 **センサー → 分散処理 → 判断 → アクション** までを一貫して扱えるようになることを目的にした
 再現可能な colcon workspace です。
 
-- **型安全メッセージ**: 独自 msg（`medical_interfaces/VitalSigns.msg`）でバイタルデータを型として定義し、ノード間通信を明確化します。
+- **型安全メッセージ**: 独自 msg（`src/medical_interfaces/msg/VitalSigns.msg` など）でバイタルデータやアラートを型として定義し、ノード間通信を明確化します。
 - **namespace 分離**: 患者ごとに namespace を切って同一ノードを複数起動し、トピック衝突を避けながらスケールさせます。
 - **疎結合な機能追加**: alerts / advisories / control actions を topic と launch 引数で追加し、既存の topic 契約を維持します。
 - **再現性重視**: fault injection、grep可能なイベントログ、rosbag replay、pytest を組み合わせて、同じ条件で検証できる状態を保ちます。
@@ -173,7 +173,7 @@ sudo apt install -y python3-colcon-common-extensions python3-rosdep
 ## 依存（rosdep）
 この workspace には 2 パッケージがあります。
 
-- `medical_interfaces`（`VitalSigns.msg`）
+- `medical_interfaces`（`msg/VitalSigns.msg`, `msg/Alert.msg`, `msg/BCIFeatures.msg`）
 - `medical_robot_sim`（`vital_sensor`, `icu_monitor`, `rule_alert_engine`, `advisory_publisher`, `icu_coordinator`, `closed_loop_controller` など）
 
 依存解決（初回のみ `rosdep update`）:
