@@ -149,7 +149,11 @@ main() {
   echo_control_once
 
   if [ -n "${EXPECTED_CONTROL_RULE_ID}" ]; then
-    grep -n "rule_id: ${EXPECTED_CONTROL_RULE_ID}" "${CONTROL_ONCE_LOG}"
+    if ! grep -n "rule_id: ${EXPECTED_CONTROL_RULE_ID}" "${CONTROL_ONCE_LOG}" \
+      && ! grep -n "rule_id=${EXPECTED_CONTROL_RULE_ID}" "${LOG_FILE}"; then
+      echo "ERROR: expected control rule not observed: ${EXPECTED_CONTROL_RULE_ID}" >&2
+      return 1
+    fi
   fi
 
   if ! kill -0 "${LAUNCH_PID}" >/dev/null 2>&1; then
