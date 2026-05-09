@@ -29,7 +29,7 @@ verifies one message from each representative topic:
 
 ## GitHub Actions
 
-`.github/workflows/ci.yml` runs two checks:
+`.github/workflows/ci.yml` runs these checks:
 
 - builds and tests the colcon workspace in `ros:humble-ros-base`
 - starts the launch graph and verifies representative topics with

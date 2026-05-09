@@ -15,6 +15,10 @@ ECHO_WAIT_SEC="${ECHO_WAIT_SEC:-35}"
 
 LAUNCH_PID=""
 
+# Avoid the ros2 CLI daemon in headless CI; acceptance docs use the same
+# mitigation when daemon state makes topic discovery flaky.
+export ROS2CLI_NO_DAEMON="${ROS2CLI_NO_DAEMON:-1}"
+
 stop_launch() {
   if [ -z "${LAUNCH_PID}" ] || ! kill -0 "${LAUNCH_PID}" >/dev/null 2>&1; then
     return 0
@@ -66,7 +70,11 @@ trap cleanup EXIT
 topic_exists() {
   local topic="$1"
   local topics_file="/tmp/ros2_ci_topics.txt"
-  ros2 topic list > "${topics_file}"
+  if ! ros2 topic list > "${topics_file}" 2>/tmp/ros2_ci_topic_list.err; then
+    echo "WARN: ros2 topic list failed while waiting for ${topic}" >&2
+    sed -n '1,40p' /tmp/ros2_ci_topic_list.err >&2 || true
+    return 1
+  fi
   python3 - "$topic" "${topics_file}" <<'PY'
 import sys
 
@@ -103,9 +111,6 @@ echo_once() {
 
 main() {
   rm -f "${LOG_FILE}"
-
-  ros2 daemon stop >/dev/null 2>&1 || true
-  ros2 daemon start >/dev/null 2>&1 || true
 
   ros2 launch medical_robot_sim icu_multi_patient.launch.py \
     patients:="${PATIENT_ID}" \

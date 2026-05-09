@@ -1,7 +1,6 @@
 FROM ros:humble-ros-base
 
-ARG ROS_DISTRO=humble
-ENV ROS_DISTRO=${ROS_DISTRO}
+ENV ROS_DISTRO=humble
 ENV DEBIAN_FRONTEND=noninteractive
 SHELL ["/bin/bash", "-c"]
 
