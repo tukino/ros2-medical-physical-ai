@@ -57,7 +57,7 @@ package "Patient Namespace (/patient_XX)" {
 
 [icu_monitor]
 [bci_monitor]
-[rule_alert_engine\n(classic or lifecycle)] as alert_engine
+[alert engine\n(selected by alerts_node_kind)] as alert_engine
 [icu_coordinator]
 
 (patient_vitals) --> [icu_monitor] : VitalSigns.msg
