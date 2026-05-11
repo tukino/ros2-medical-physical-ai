@@ -36,8 +36,8 @@ setup(
     zip_safe=True,
     maintainer='tukino',
     maintainer_email='tukino@todo.todo',
-    description='TODO: Package description',
-    license='TODO: License declaration',
+    description='Medical robot simulation nodes and launch assets',
+    license='Apache-2.0',
     extras_require={
         'test': [
             'pytest',
