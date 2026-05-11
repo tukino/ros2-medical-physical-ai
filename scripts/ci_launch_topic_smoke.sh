@@ -6,7 +6,7 @@
 # - topic discovery works in the CI container
 # - vitals, alerts, and control actions can be observed with ros2 topic echo
 
-set -eo pipefail
+set -euo pipefail
 
 PATIENT_ID="${PATIENT_ID:-patient_01}"
 LOG_FILE="${LOG_FILE:-/tmp/ros2_ci_launch_topic_smoke.log}"
