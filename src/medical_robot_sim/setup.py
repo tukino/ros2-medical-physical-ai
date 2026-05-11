@@ -36,8 +36,8 @@ setup(
     zip_safe=True,
     maintainer='tukino',
     maintainer_email='tukino@todo.todo',
-    description='TODO: Package description',
-    license='TODO: License declaration',
+    description='ROS 2 simulator nodes for ICU monitoring, anomaly detection, and alerting.',
+    license='Apache-2.0',
     extras_require={
         'test': [
             'pytest',
