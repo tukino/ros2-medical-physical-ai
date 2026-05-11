@@ -9,7 +9,8 @@
 set -euo pipefail
 
 PATIENT_ID="${PATIENT_ID:-patient_01}"
-LOG_FILE="${LOG_FILE:-/tmp/ros2_ci_launch_topic_smoke.log}"
+WORK_DIR="${WORK_DIR:-$(mktemp -d /tmp/ros2_ci_launch_topic_smoke.XXXXXX)}"
+LOG_FILE="${LOG_FILE:-${WORK_DIR}/launch_topic_smoke.log}"
 SCENARIO="${SCENARIO:-flatline}"
 FLATLINE_HISTORY_SIZE="${FLATLINE_HISTORY_SIZE:-3}"
 CONTROL_COOLDOWN_SEC="${CONTROL_COOLDOWN_SEC:-1.0}"
@@ -18,7 +19,9 @@ CONTROL_CRITICAL_SPO2="${CONTROL_CRITICAL_SPO2:-88.0}"
 EXPECTED_CONTROL_RULE_ID="${EXPECTED_CONTROL_RULE_ID:-}"
 TOPIC_WAIT_SEC="${TOPIC_WAIT_SEC:-30}"
 ECHO_WAIT_SEC="${ECHO_WAIT_SEC:-35}"
-CONTROL_ONCE_LOG="${CONTROL_ONCE_LOG:-/tmp/ros2_ci_control_once.log}"
+CONTROL_ONCE_LOG="${CONTROL_ONCE_LOG:-${WORK_DIR}/control_once.log}"
+TOPICS_FILE="${TOPICS_FILE:-${WORK_DIR}/topics.txt}"
+TOPIC_LIST_ERR="${TOPIC_LIST_ERR:-${WORK_DIR}/topic_list.err}"
 
 LAUNCH_PID=""
 
@@ -67,6 +70,9 @@ print_launch_log() {
 cleanup() {
   local rc=$?
   stop_launch
+  if [ -d "${WORK_DIR}" ]; then
+    rm -rf "${WORK_DIR}"
+  fi
   if [ "${rc}" -ne 0 ]; then
     print_launch_log
   fi
@@ -76,13 +82,12 @@ trap cleanup EXIT
 
 topic_exists() {
   local topic="$1"
-  local topics_file="/tmp/ros2_ci_topics.txt"
-  if ! ros2 topic list > "${topics_file}" 2>/tmp/ros2_ci_topic_list.err; then
+  if ! ros2 topic list > "${TOPICS_FILE}" 2>"${TOPIC_LIST_ERR}"; then
     echo "WARN: ros2 topic list failed while waiting for ${topic}" >&2
-    sed -n '1,40p' /tmp/ros2_ci_topic_list.err >&2 || true
+    sed -n '1,40p' "${TOPIC_LIST_ERR}" >&2 || true
     return 1
   fi
-  python3 - "$topic" "${topics_file}" <<'PY'
+  python3 - "$topic" "${TOPICS_FILE}" <<'PY'
 import sys
 
 expected = sys.argv[1]
