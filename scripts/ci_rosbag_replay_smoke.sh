@@ -4,7 +4,7 @@
 # This covers the Day12 reproducibility loop in automation:
 # live vitals -> rosbag record -> replay pipeline without sensors -> alerts.
 
-set -eo pipefail
+set -euo pipefail
 
 PATIENT_ID="${PATIENT_ID:-patient_01}"
 WORK_DIR="${WORK_DIR:-$(mktemp -d /tmp/ros2_ci_rosbag_replay.XXXXXX)}"
