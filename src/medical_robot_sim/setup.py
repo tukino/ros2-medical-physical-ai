@@ -1,14 +1,3 @@
-# TODO: ICU monitor が「最後に受信した時刻」から患者状態を判定できるようにする。
-# 要件:
-# - 患者ごとに last_seen（rclpy clock）を保持
-# - age_sec = now - last_seen
-# - last_seen が None の場合 -> alert = "NO DATA"
-# - age_sec > 10 の場合 -> alert = "NO DATA"
-# - それ以外で age_sec > 3 の場合 -> alert = "STALE"
-# - それ以外 -> alert = "OK"
-# - ダッシュボードの alert 列に反映
-# - 最後の値は保持しつつ、状態（NO DATA/STALE 等）を明確に表示
-
 from setuptools import find_packages, setup
 import os
 from glob import glob
