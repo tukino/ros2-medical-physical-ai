@@ -24,7 +24,7 @@ setup(
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='tukino',
-    maintainer_email='tukino@todo.todo',
+    maintainer_email='tukino@example.com',
     description='Medical robot simulation nodes and launch assets',
     license='Apache-2.0',
     extras_require={
