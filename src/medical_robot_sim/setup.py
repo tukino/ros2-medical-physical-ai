@@ -23,7 +23,7 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='tukino',
+    maintainer='Codex',
     maintainer_email='codex@openai.com',
     description='Medical robot simulation nodes and launch assets',
     license='Apache-2.0',
