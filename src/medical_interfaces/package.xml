@@ -4,7 +4,7 @@
   <name>medical_interfaces</name>
   <version>0.0.0</version>
   <description>Message and service interface definitions for the medical robot simulation</description>
-  <maintainer email="codex@openai.com">yohei</maintainer>
+  <maintainer email="codex@openai.com">Codex</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
