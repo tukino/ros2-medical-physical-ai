@@ -6,12 +6,22 @@
 # - topic discovery works in the CI container
 # - vitals, alerts, and control actions can be observed with ros2 topic echo
 
-set -eo pipefail
+set -euo pipefail
 
 PATIENT_ID="${PATIENT_ID:-patient_01}"
-LOG_FILE="${LOG_FILE:-/tmp/ros2_ci_launch_topic_smoke.log}"
+WORK_DIR="${WORK_DIR:-$(mktemp -d /tmp/ros2_ci_launch_topic_smoke.XXXXXX)}"
+LOG_FILE="${LOG_FILE:-${WORK_DIR}/launch_topic_smoke.log}"
+SCENARIO="${SCENARIO:-flatline}"
+FLATLINE_HISTORY_SIZE="${FLATLINE_HISTORY_SIZE:-3}"
+CONTROL_COOLDOWN_SEC="${CONTROL_COOLDOWN_SEC:-1.0}"
+CONTROL_LOW_SPO2="${CONTROL_LOW_SPO2:-92.0}"
+CONTROL_CRITICAL_SPO2="${CONTROL_CRITICAL_SPO2:-88.0}"
+EXPECTED_CONTROL_RULE_ID="${EXPECTED_CONTROL_RULE_ID:-}"
 TOPIC_WAIT_SEC="${TOPIC_WAIT_SEC:-30}"
 ECHO_WAIT_SEC="${ECHO_WAIT_SEC:-35}"
+CONTROL_ONCE_LOG="${CONTROL_ONCE_LOG:-${WORK_DIR}/control_once.log}"
+TOPICS_FILE="${TOPICS_FILE:-${WORK_DIR}/topics.txt}"
+TOPIC_LIST_ERR="${TOPIC_LIST_ERR:-${WORK_DIR}/topic_list.err}"
 
 LAUNCH_PID=""
 
@@ -60,6 +70,9 @@ print_launch_log() {
 cleanup() {
   local rc=$?
   stop_launch
+  if [ -d "${WORK_DIR}" ]; then
+    rm -rf "${WORK_DIR}"
+  fi
   if [ "${rc}" -ne 0 ]; then
     print_launch_log
   fi
@@ -69,13 +82,12 @@ trap cleanup EXIT
 
 topic_exists() {
   local topic="$1"
-  local topics_file="/tmp/ros2_ci_topics.txt"
-  if ! ros2 topic list > "${topics_file}" 2>/tmp/ros2_ci_topic_list.err; then
+  if ! ros2 topic list > "${TOPICS_FILE}" 2>"${TOPIC_LIST_ERR}"; then
     echo "WARN: ros2 topic list failed while waiting for ${topic}" >&2
-    sed -n '1,40p' /tmp/ros2_ci_topic_list.err >&2 || true
+    sed -n '1,40p' "${TOPIC_LIST_ERR}" >&2 || true
     return 1
   fi
-  python3 - "$topic" "${topics_file}" <<'PY'
+  python3 - "$topic" "${TOPICS_FILE}" <<'PY'
 import sys
 
 expected = sys.argv[1]
@@ -109,6 +121,13 @@ echo_once() {
   timeout "${ECHO_WAIT_SEC}s" ros2 topic echo "${topic}" "${msg_type}" --once
 }
 
+echo_control_once() {
+  local topic="/${PATIENT_ID}/control_actions"
+  echo "echo once: ${topic} (medical_interfaces/msg/Alert)"
+  timeout "${ECHO_WAIT_SEC}s" ros2 topic echo \
+    "${topic}" medical_interfaces/msg/Alert --once | tee "${CONTROL_ONCE_LOG}"
+}
+
 main() {
   rm -f "${LOG_FILE}"
 
@@ -116,9 +135,11 @@ main() {
     patients:="${PATIENT_ID}" \
     enable_alerts:=true \
     enable_closed_loop:=true \
-    scenario:=flatline \
-    flatline_history_size:=3 \
-    control_cooldown_sec:=1.0 \
+    scenario:="${SCENARIO}" \
+    flatline_history_size:="${FLATLINE_HISTORY_SIZE}" \
+    control_cooldown_sec:="${CONTROL_COOLDOWN_SEC}" \
+    control_low_spo2:="${CONTROL_LOW_SPO2}" \
+    control_critical_spo2:="${CONTROL_CRITICAL_SPO2}" \
     sigterm_timeout:=2 \
     sigkill_timeout:=2 \
     > "${LOG_FILE}" 2>&1 &
@@ -130,7 +151,15 @@ main() {
 
   echo_once "/${PATIENT_ID}/patient_vitals" "medical_interfaces/msg/VitalSigns"
   echo_once "/${PATIENT_ID}/alerts" "medical_interfaces/msg/Alert"
-  echo_once "/${PATIENT_ID}/control_actions" "medical_interfaces/msg/Alert"
+  echo_control_once
+
+  if [ -n "${EXPECTED_CONTROL_RULE_ID}" ]; then
+    if ! grep -n "rule_id: ${EXPECTED_CONTROL_RULE_ID}" "${CONTROL_ONCE_LOG}" \
+      && ! grep -n "rule_id=${EXPECTED_CONTROL_RULE_ID}" "${LOG_FILE}"; then
+      echo "ERROR: expected control rule not observed: ${EXPECTED_CONTROL_RULE_ID}" >&2
+      return 1
+    fi
+  fi
 
   if ! kill -0 "${LAUNCH_PID}" >/dev/null 2>&1; then
     echo "ERROR: launch process exited before cleanup" >&2
@@ -138,7 +167,7 @@ main() {
     return 1
   fi
 
-  echo "CI launch/topic smoke test passed"
+  echo "CI launch/topic smoke test passed (scenario=${SCENARIO})"
 }
 
 main "$@"

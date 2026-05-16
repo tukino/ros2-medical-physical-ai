@@ -27,6 +27,30 @@ verifies one message from each representative topic:
 - `/patient_01/alerts`
 - `/patient_01/control_actions`
 
+To exercise a closed-loop action in the smoke test, run the same script with a
+SpO2-drop scenario and an expected control rule:
+
+```bash
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+SCENARIO=spo2_drop \
+CONTROL_LOW_SPO2=99.0 \
+EXPECTED_CONTROL_RULE_ID=control.oxygen_boost \
+  bash scripts/ci_launch_topic_smoke.sh
+```
+
+To run the rosbag reproducibility smoke test locally:
+
+```bash
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+bash scripts/ci_rosbag_replay_smoke.sh
+```
+
+The rosbag smoke test records `/patient_01/patient_vitals`, replays the bag
+through `icu_replay.launch.py` without starting a sensor, and verifies that
+`/patient_01/alerts` receives a replay-generated alert.
+
 ## GitHub Actions
 
 `.github/workflows/ci.yml` runs these checks:
@@ -34,7 +58,14 @@ verifies one message from each representative topic:
 - builds and tests the colcon workspace in `ros:humble-ros-base`
 - starts the launch graph and verifies representative topics with
   `ros2 topic echo --once`
+- runs a SpO2-drop closed-loop smoke test and verifies
+  `control.oxygen_boost`
+- records and replays a rosbag, then verifies replay-generated alerts
 - builds the repository `Dockerfile` to catch development image regressions
+
+The workspace job uploads `.ci_artifacts/` as `ros2-ci-smoke-artifacts` so
+failed smoke tests keep their launch, echo, rosbag record, and rosbag replay
+logs for debugging.
 
 The workflow is intentionally small and uses package manifests plus `rosdep`
 as the dependency source of truth.

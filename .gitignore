@@ -18,5 +18,6 @@
 
 # local artifacts
 /bags/
+.ci_artifacts/
 .ros/
 *.db3

@@ -26,7 +26,9 @@ jobs:
           apt-get install -y --no-install-recommends \
             git \
             python3-colcon-common-extensions \
-            python3-rosdep
+            python3-rosdep \
+            ros-humble-rosbag2 \
+            ros-humble-rosbag2-storage-default-plugins
           rm -rf /var/lib/apt/lists/*
 
       - name: Install package dependencies
@@ -52,19 +54,59 @@ jobs:
           source install/setup.bash
           colcon test --event-handlers console_direct+ --return-code-on-test-failure
 
+      - name: Prepare smoke test artifacts
+        run: |
+          mkdir -p \
+            .ci_artifacts/launch-flatline \
+            .ci_artifacts/launch-spo2 \
+            .ci_artifacts/rosbag-replay
+
       - name: Launch smoke test
         timeout-minutes: 5
         run: |
           set -eo pipefail
           source /opt/ros/humble/setup.bash
           source install/setup.bash
-          bash scripts/ci_launch_topic_smoke.sh
+          LOG_FILE="$PWD/.ci_artifacts/launch-flatline/launch.log" \
+          CONTROL_ONCE_LOG="$PWD/.ci_artifacts/launch-flatline/control_once.log" \
+            bash scripts/ci_launch_topic_smoke.sh
+
+      - name: SpO2 drop control smoke test
+        timeout-minutes: 5
+        run: |
+          set -eo pipefail
+          source /opt/ros/humble/setup.bash
+          source install/setup.bash
+          SCENARIO=spo2_drop \
+          CONTROL_LOW_SPO2=99.0 \
+          EXPECTED_CONTROL_RULE_ID=control.oxygen_boost \
+          LOG_FILE="$PWD/.ci_artifacts/launch-spo2/launch.log" \
+          CONTROL_ONCE_LOG="$PWD/.ci_artifacts/launch-spo2/control_once.log" \
+            bash scripts/ci_launch_topic_smoke.sh
+
+      - name: Rosbag replay smoke test
+        timeout-minutes: 8
+        run: |
+          set -eo pipefail
+          source /opt/ros/humble/setup.bash
+          source install/setup.bash
+          WORK_DIR="$PWD/.ci_artifacts/rosbag-replay" \
+            bash scripts/ci_rosbag_replay_smoke.sh
 
       - name: Show test results
         if: always()
         run: |
           source /opt/ros/humble/setup.bash
           colcon test-result --verbose || true
+
+      - name: Upload smoke test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ros2-ci-smoke-artifacts
+          path: .ci_artifacts/
+          if-no-files-found: ignore
+          include-hidden-files: true
 
   docker-build:
     name: Build development image
