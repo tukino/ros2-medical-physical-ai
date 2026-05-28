@@ -220,9 +220,7 @@ cd ~/ros2_ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 
-bash src/medical_robot_sim/../../../scripts/ci_day19_replay_control_smoke.sh
-# または絶対パスで:
-# bash ~/ros2_ws/src/../scripts/ci_day19_replay_control_smoke.sh
+bash scripts/ci_day19_replay_control_smoke.sh
 ```
 
 期待条件:

@@ -36,7 +36,8 @@
 
 ## CI tasks
 
-- [x] `.github/workflows/ci.yml` に Day19 スモークテストステップを追加する
+- [ ] `.github/workflows/ci.yml` に Day19 スモークテストステップを追加する
+  （GitHub App の `workflows` 権限制限により本 PR 対象外。メンテナーフォローアップ）
 
 ## Docs update tasks
 

@@ -314,7 +314,9 @@ def generate_launch_description() -> LaunchDescription:
                 default_value='false',
                 description=(
                     '[Day19] If true, start closed_loop_controller for each patient. '
-                    'Requires enable_alerts:=true to generate alerts for decision input.'
+                    'The controller evaluates SpO2 from patient_vitals directly and '
+                    'can publish control actions even when enable_alerts:=false. '
+                    'Enabling alerts provides additional RED-alert-driven decisions.'
                 ),
             ),
             DeclareLaunchArgument(

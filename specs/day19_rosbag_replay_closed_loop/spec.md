@@ -67,18 +67,22 @@ Phase 2:
 - `src/medical_robot_sim/launch/icu_replay.launch.py`（変更）
 - `src/medical_robot_sim/test/test_day19_replay_control_policy.py`（新規）
 - `scripts/ci_day19_replay_control_smoke.sh`（新規）
-- `.github/workflows/ci.yml`（変更）
 - `docs/day19_rosbag_replay_closed_loop.md`（新規）
 - `specs/day19_rosbag_replay_closed_loop/spec.md`（本ファイル）
 - `specs/day19_rosbag_replay_closed_loop/tasks.md`（新規）
 - `specs/day19_rosbag_replay_closed_loop/acceptance.md`（新規）
 
+> Note: `.github/workflows/ci.yml` への Day19 スモークテスト追加は GitHub App の
+> `workflows` 権限制限によりこの PR の対象外。メンテナーが別途対応すること。
+
 ## Constraints
 
 - `icu_replay.launch.py` の既存引数・動作を壊さない（後方互換）
 - `enable_closed_loop=false` 時は `control_actions` topic が存在しない
-- `enable_closed_loop=true` 時も、`enable_alerts=false` なら alerts が来ないため
-  `NO_DATA` ガードが優先され HOLD が続く（安全側）
+- `enable_closed_loop=true` 時、`closed_loop_controller` は `patient_vitals` の SpO2 を
+  直接評価するため `enable_alerts=false` でも SpO2 閾値違反で制御アクションを発行できる。
+  `enable_alerts=false` にすると RED alert による CALL_STAFF トリガーは無効になるが、
+  vitals 経由の OXYGEN_BOOST / CALL_STAFF は引き続き動作する
 - Ctrl+C で clean shutdown（stack trace 無し）
 
 ## Non-goals

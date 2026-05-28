@@ -3,7 +3,7 @@
 These are pure-function / wiring tests that do NOT require a live ROS graph.
 They verify the policy logic reachable through the replay path:
 - spo2_drop scenario (bag contains SpO2=85) -> CALL_STAFF
-- bag with normal vitals -> HOLD (no control publish)
+- bag with normal vitals -> HOLD (published once as first action)
 - replay NO_DATA guard: age_sec >> no_data_after_sec -> HOLD
 - replay cooldown: second decision within cooldown -> should_publish=False
 - replay with advisory integration flag off -> alert-only path
@@ -96,7 +96,7 @@ def test_replay_no_data_guard_overrides_critical_spo2() -> None:
     assert d.action == ACTION_HOLD
 
 
-def test_replay_age_sec_exactly_at_threshold_is_no_data() -> None:
+def test_replay_age_sec_over_threshold_is_no_data() -> None:
     """age_sec strictly greater than no_data_after_sec -> HOLD."""
     d = _decide(
         spo2=80.0,
