@@ -5,6 +5,7 @@
 - rosbag replay 用に、vital_sensor を起動せずに下流だけを立ち上げる
   - icu_monitor（vitals 購読）
   - rule_alert_engine / rule_alert_engine_lifecycle（任意。vitals 購読→alerts publish）
+  - closed_loop_controller（任意。Day18/Day19。vitals/alerts 購読→control_actions publish）
 
 注意:
 - bag play は別プロセスで実行し、/patient_XX/patient_vitals を publish する
@@ -105,6 +106,22 @@ def _launch_setup(context, *args, **kwargs):
     alerts_qos_reliability = LaunchConfiguration('alerts_qos_reliability').perform(context).strip()
     alerts_qos_durability = LaunchConfiguration('alerts_qos_durability').perform(context).strip()
 
+    # [Day19] Closed-loop control params (mirrored from icu_multi_patient.launch.py)
+    enable_closed_loop_str = LaunchConfiguration('enable_closed_loop').perform(context)
+    enable_closed_loop = _parse_bool(enable_closed_loop_str)
+
+    control_topic = LaunchConfiguration('control_topic').perform(context).strip()
+    control_cooldown_sec = float(LaunchConfiguration('control_cooldown_sec').perform(context))
+    control_no_data_after_sec = float(
+        LaunchConfiguration('control_no_data_after_sec').perform(context)
+    )
+    control_low_spo2 = float(LaunchConfiguration('control_low_spo2').perform(context))
+    control_critical_spo2 = float(LaunchConfiguration('control_critical_spo2').perform(context))
+    enable_control_from_advisories_str = LaunchConfiguration(
+        'enable_control_from_advisories'
+    ).perform(context)
+    enable_control_from_advisories = _parse_bool(enable_control_from_advisories_str)
+
     sigterm_timeout = LaunchConfiguration('sigterm_timeout')
     sigkill_timeout = LaunchConfiguration('sigkill_timeout')
 
@@ -167,6 +184,39 @@ def _launch_setup(context, *args, **kwargs):
                 sigkill_timeout=sigkill_timeout,
             )
         )
+
+    # [Day19] Closed-loop controller: one node per patient namespace
+    if enable_closed_loop:
+        for pid in patient_ids:
+            controller_params: list = [
+                {'patient_id': pid},
+                {'vitals_topic': 'patient_vitals'},
+                {'alerts_topic': 'alerts'},
+                {'control_topic': control_topic},
+                {'control_cooldown_sec': control_cooldown_sec},
+                {'control_no_data_after_sec': control_no_data_after_sec},
+                {'control_low_spo2': control_low_spo2},
+                {'control_critical_spo2': control_critical_spo2},
+                {'enable_control_from_advisories': enable_control_from_advisories},
+                {'vitals_qos_depth': vitals_qos_depth},
+                {'vitals_qos_reliability': vitals_qos_reliability},
+                {'vitals_qos_durability': vitals_qos_durability},
+                {'alerts_qos_depth': alerts_qos_depth},
+                {'alerts_qos_reliability': alerts_qos_reliability},
+                {'alerts_qos_durability': alerts_qos_durability},
+            ]
+            actions.append(
+                Node(
+                    package='medical_robot_sim',
+                    executable='closed_loop_controller',
+                    name='closed_loop_controller',
+                    namespace=pid,
+                    output='screen',
+                    parameters=controller_params,
+                    sigterm_timeout=sigterm_timeout,
+                    sigkill_timeout=sigkill_timeout,
+                )
+            )
 
     return actions
 
@@ -257,6 +307,47 @@ def generate_launch_description() -> LaunchDescription:
                 'alerts_qos_durability',
                 default_value='volatile',
                 description='[Day8] QoS durability for alerts: volatile | transient_local',
+            ),
+            # [Day19] Closed-loop control arguments
+            DeclareLaunchArgument(
+                'enable_closed_loop',
+                default_value='false',
+                description=(
+                    '[Day19] If true, start closed_loop_controller for each patient. '
+                    'Requires enable_alerts:=true to generate alerts for decision input.'
+                ),
+            ),
+            DeclareLaunchArgument(
+                'control_topic',
+                default_value='control_actions',
+                description='[Day19] Relative topic name for control action output.',
+            ),
+            DeclareLaunchArgument(
+                'control_cooldown_sec',
+                default_value='5.0',
+                description='[Day19] Minimum seconds between consecutive control publishes.',
+            ),
+            DeclareLaunchArgument(
+                'control_no_data_after_sec',
+                default_value='10.0',
+                description=(
+                    '[Day19] Seconds since last vitals after which HOLD is forced (NO_DATA guard).'
+                ),
+            ),
+            DeclareLaunchArgument(
+                'control_low_spo2',
+                default_value='92.0',
+                description='[Day19] SpO2 threshold [%] below which OXYGEN_BOOST is issued.',
+            ),
+            DeclareLaunchArgument(
+                'control_critical_spo2',
+                default_value='88.0',
+                description='[Day19] SpO2 threshold [%] below which CALL_STAFF is issued.',
+            ),
+            DeclareLaunchArgument(
+                'enable_control_from_advisories',
+                default_value='false',
+                description='[Day19] If true, advisory alerts also drive control decisions.',
             ),
             DeclareLaunchArgument(
                 'sigterm_timeout',
