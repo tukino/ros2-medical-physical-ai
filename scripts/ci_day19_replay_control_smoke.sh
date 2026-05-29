@@ -15,7 +15,10 @@ ECHO_WAIT_SEC="${ECHO_WAIT_SEC:-35}"
 CONTROL_LOW_SPO2="${CONTROL_LOW_SPO2:-99.0}"
 CONTROL_CRITICAL_SPO2="${CONTROL_CRITICAL_SPO2:-95.0}"
 CONTROL_COOLDOWN_SEC="${CONTROL_COOLDOWN_SEC:-1.0}"
-EXPECTED_CONTROL_RULE_ID="${EXPECTED_CONTROL_RULE_ID:-}"
+# Default to control.call_staff: the injected SpO2=85 sample is below
+# CONTROL_CRITICAL_SPO2=95.0, so the replay must produce a call_staff action
+# rather than an arbitrary control.hold that could be captured before replay.
+EXPECTED_CONTROL_RULE_ID="${EXPECTED_CONTROL_RULE_ID:-control.call_staff}"
 
 BAG_DIR="${WORK_DIR}/vitals_bag"
 LIVE_LOG="${WORK_DIR}/live_launch.log"
