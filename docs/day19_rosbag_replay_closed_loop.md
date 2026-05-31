@@ -156,21 +156,23 @@ ros2 launch medical_robot_sim icu_replay.launch.py \
   > "${WORK_DIR}/replay.log" 2>&1 &
 REPLAY_PID=$!
 
-# Wait for topics and echo once
+# Wait for topics to appear, start bag play, then bounded echo
 sleep 8
-ros2 topic echo --once "/${PATIENT_ID}/control_actions" \
-  medical_interfaces/msg/Alert | tee "${WORK_DIR}/control_once.txt" &
-ECHO_PID=$!
 ros2 bag play "${BAG_DIR}" --loop </dev/null > "${WORK_DIR}/play.log" 2>&1 &
 PLAY_PID=$!
 
-wait $ECHO_PID || true
-kill -INT $PLAY_PID 2>/dev/null || true; wait $PLAY_PID 2>/dev/null || true
+# timeout prevents indefinite hang when no control action is emitted
+timeout 35s ros2 topic echo --once "/${PATIENT_ID}/control_actions" \
+  medical_interfaces/msg/Alert | tee "${WORK_DIR}/control_once.txt"
+
+kill -INT $PLAY_PID   2>/dev/null || true; wait $PLAY_PID   2>/dev/null || true
 kill -INT $REPLAY_PID 2>/dev/null || true; wait $REPLAY_PID 2>/dev/null || true
 
-grep "event=control\.config" "${WORK_DIR}/replay.log" || true
-grep "event=control\.publish" "${WORK_DIR}/replay.log" || true
-grep "kind: control_action" "${WORK_DIR}/control_once.txt" || true
+# These greps are mandatory evidence — no || true so failures surface immediately.
+grep "event=control\.config"  "${WORK_DIR}/replay.log"
+grep "event=control\.publish" "${WORK_DIR}/replay.log"
+grep "kind: control_action"   "${WORK_DIR}/control_once.txt"
+grep "rule_id: control\."     "${WORK_DIR}/control_once.txt"
 
 echo "OK: day19 quickstart ran (see ${WORK_DIR})"
 ```
