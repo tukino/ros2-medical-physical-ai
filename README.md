@@ -32,6 +32,7 @@
 | 再現性 | rosbag record/play、replay専用launch、acceptance手順 |
 | Physical化 | 実センサーI2C/SPIのmock/抽象化、Jetson/edge向け設計メモ |
 | 応用 | EEG/BCI入力、advisory layer、multi-node coordination、closed-loop control |
+| 統合検証 | rosbag replay × 閉ループ制御の一貫したCI自動化（Day19） |
 
 構成（処理の流れ）は次のとおりです。
 
@@ -161,6 +162,8 @@ ros2 topic echo /patient_01/control_actions --once
   - 受け入れ（コピペ手順）: [specs/day17_multi_node_coordination/acceptance.md](specs/day17_multi_node_coordination/acceptance.md)
 - Day18 リアルタイム制御（閉ループ）: [docs/day18_realtime_closed_loop.md](docs/day18_realtime_closed_loop.md)
   - 受け入れ（コピペ手順）: [specs/day18_realtime_closed_loop/acceptance.md](specs/day18_realtime_closed_loop/acceptance.md)
+- Day19 rosbag replay × 閉ループ制御統合検証: [docs/day19_rosbag_replay_closed_loop.md](docs/day19_rosbag_replay_closed_loop.md)
+  - 受け入れ（コピペ手順）: [specs/day19_rosbag_replay_closed_loop/acceptance.md](specs/day19_rosbag_replay_closed_loop/acceptance.md)
 
 ## 前提（ROS 2 Humble）
 - ROS 2 Humble がインストール済み
